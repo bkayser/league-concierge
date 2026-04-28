@@ -1,0 +1,178 @@
+# Cursor Agent Rules — OYSA RAG Chatbot
+
+## Project Summary
+This is a RAG (Retrieval-Augmented Generation) chatbot for the Oregon Youth Soccer Association.
+It is a Next.js app hosted on Vercel, embedded via iframe on oregonyouthsoccer.org.
+The corpus is a small set of operational documents and competition rules (~50 PDFs/Word docs).
+
+## Stack — Do Not Deviate Without Asking
+- **Framework**: Next.js with App Router
+- **Embeddings**: OpenAI `text-embedding-3-small` (1536 dimensions) — embeddings ONLY, not generation
+- **Generation**: Anthropic Claude (`claude-sonnet-4-6`) — generation ONLY, not embeddings
+- **Vector DB**: Pinecone serverless, index name `oysa-docs`, dimension 1536, metric cosine
+- **Hosting**: Vercel serverless functions
+
+## Shared Client Instances
+Always import OpenAI, Anthropic, and Pinecone clients from `@/lib/clients.js`.
+Never instantiate these clients inline in route handlers or components.
+The embed utility lives in `@/lib/embed.js` — use `embedText()` from there.
+
+## Environment Variables
+Use only these env var names — do not introduce new ones without updating README and .env.local:
+- `OPENAI_API_KEY` — OpenAI (embeddings only)
+- `ANTHROPIC_API_KEY` — Anthropic (generation only)
+- `PINECONE_API_KEY` — Pinecone
+- `PINECONE_INDEX_NAME` — defaults to "oysa-docs"
+- `ADMIN_PASSWORD` — plain password for admin UI access
+- `GENERATION_MODEL` - `claude-sonnet-4-6`
+
+## Embedding Rules — Critical
+- NEVER change the embedding model without flagging it explicitly. The Pinecone index dimension
+  (1536) is permanently tied to `text-embedding-3-small`. Changing models requires destroying
+  the index, recreating it with the new dimension, and re-ingesting all documents.
+- For Pinecone retrieval, embed ONLY the latest user message (`messages.at(-1).content`).
+  Do NOT embed the full conversation history for retrieval — it dilutes the query vector.
+  Multi-turn context is handled entirely by Claude (see below), not by Pinecone.
+- Always strip newlines before embedding: `text.replace(/\n/g, ' ')`
+
+## Chat API Route Behavior
+- Accept `{ messages: [{role, content}] }` in the POST body
+- Embed only `messages.at(-1).content` for Pinecone retrieval
+- Retrieve top 5 chunks from Pinecone (topK: 5)
+- Pass retrieved chunks as part of the system prompt context, not as a user message
+- Pass full conversation history to Claude as the messages array
+- Claude model string: `claude-sonnet-4-6`
+- Max tokens for Claude response: 1024
+
+## System Prompt for Claude — Non-Negotiable Constraints
+Always include these constraints in the Claude system prompt:
+1. Answer only from the provided document context
+2. If the answer is not in the documents, say so clearly — never fabricate
+3. Cite the source document when possible ("According to [filename]...")
+4. Never invent rules, eligibility requirements, fees, dates, or registration deadlines
+5. Keep answers concise and factual — this is a rules/compliance assistant
+
+## Admin UI Rules
+- Authentication: check `ADMIN_PASSWORD` env var against a submitted password. Simple POST, no sessions, no OAuth.
+- The admin must be able to: upload a document, view indexed documents, delete a document
+- UI must require zero technical knowledge — no jargon, no raw JSON, no CLI instructions shown
+- Supported upload formats: PDF and .docx only
+- On upload: extract text → chunk → embed → upsert to Pinecone with metadata
+
+## Pinecone Namespace Strategy
+Two namespaces are used. Never mix them.
+
+- `"headers"` — one record per document, used by the admin UI to list the knowledge base
+- `"production"` — one record per chunk, used by the chat pipeline for retrieval
+
+The chat pipeline queries ONLY the `"production"` namespace.
+The admin UI queries ONLY the `"headers"` namespace to build the document list.
+
+## Document Header Record Schema
+One header record is written to the `"headers"` namespace on every ingest.
+Use the embedding of the first chunk as the vector value (Pinecone requires a valid vector).
+ID format: `"header::{filename}"`
+
+```javascript
+{
+  id: `header::${filename}`,
+  values: embeddingOfFirstChunk,
+  metadata: {
+    type: "header",
+    filename: string,          // e.g. "2024-competition-rules.pdf"
+    uploadDate: string,        // ISO 8601, e.g. "2026-04-27T14:32:00Z"
+    fileSizeBytes: number,     // raw byte count
+    fileSizeDisplay: string,   // human-readable, e.g. "278 KB"
+    mimeType: string,          // "application/pdf" or "application/vnd.openxmlformats..."
+    totalChunks: number,
+    uploadedBy: "admin"
+  }
+}
+```
+
+## Document Chunk Record Schema
+One chunk record per text segment, written to the `"production"` namespace.
+ID format: `"{filename}::chunk::{chunkIndex}"`
+
+```javascript
+{
+  id: `${filename}::chunk::${chunkIndex}`,
+  values: chunkEmbedding,     // 1536 floats from text-embedding-3-small
+  metadata: {
+    type: "chunk",
+    filename: string,
+    chunkIndex: number,
+    totalChunks: number,
+    text: string              // original chunk text — returned at query time as context
+  }
+}
+```
+
+## Document Chunking Strategy
+- Target chunk size: 400 tokens
+- Overlap between chunks: 50 tokens
+- Chunk 0's embedding is reused as the header record vector
+
+## Listing Documents in Admin UI
+Query the `"headers"` namespace with a metadata filter — do NOT scan the `"production"` namespace:
+
+```javascript
+await index.namespace("headers").query({
+  vector: new Array(1536).fill(0),   // zero vector — filtering, not similarity search
+  topK: 200,
+  filter: { type: { $eq: "header" } },
+  includeMetadata: true
+});
+```
+
+## Deleting a Document
+Delete BOTH the header record and all chunk records when a document is removed:
+
+```javascript
+// 1. Delete the header
+await index.namespace("headers").deleteOne(`header::${filename}`);
+
+// 2. Delete all chunks for this file
+await index.namespace("production").deleteMany({
+  filter: { filename: { $eq: filename } }
+});
+```
+
+Always delete both. Leaving orphaned chunks in `"production"` after deleting a header
+means stale content remains retrievable by the chat pipeline.
+
+## CORS / Embedding Strategy
+- The app is embedded via iframe on oregonyouthsoccer.org — do NOT add CORS headers to API routes
+- All fetch calls from the chat UI are same-origin (Vercel → Vercel)
+- Do not implement script-tag embed patterns — iframe only
+
+## Multi-Turn Conversation
+Multi-turn conversation IS fully supported and IS a requirement. Here is how it works:
+
+- The client maintains the full conversation history in React state (useState) as a
+  `messages` array of `{ role: 'user' | 'assistant', content: string }` objects
+- On every user message, the client sends the ENTIRE conversation history to /api/chat
+- The API route embeds only the LATEST user message for Pinecone retrieval
+- The API route passes the FULL conversation history to Claude as the messages array
+- Claude uses the full history to understand follow-up questions in context
+  (e.g. "what about transfer players?" understands "players" from the prior turn)
+- This two-track approach means: Pinecone finds relevant docs from the current question,
+  Claude answers it with awareness of everything said so far
+
+Do not use localStorage for conversation persistence unless explicitly requested.
+Do not implement server-side session storage unless explicitly requested.
+
+## Code Style
+- Prefer async/await over .then() chains
+- Use early returns to avoid deep nesting
+- Keep API route handlers thin — move logic into lib/ utilities
+- No console.log in production paths — use console.error for caught exceptions only
+- Use optional chaining and nullish coalescing freely
+
+## What NOT to Do
+- Do not use LangChain or any RAG framework — implement the pipeline directly
+- Do not add authentication libraries (NextAuth, Clerk, etc.) — simple password check only
+- Do not add a database (Postgres, Supabase, etc.) — Pinecone metadata is sufficient
+- Do not implement streaming responses until the basic non-streaming version works
+- Do not install packages without checking if the functionality already exists in the codebase
+- Do not generate a .env.local file or output API key values in any form
