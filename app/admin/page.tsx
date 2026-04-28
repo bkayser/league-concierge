@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel serverless body limit headroom)
+const ADMIN_SESSION_STORAGE_KEY = "admin-session";
+const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface AdminSessionState {
+  password: string;
+  authenticatedAt: number;
+}
 
 interface DocumentMeta {
   filename: string;
@@ -31,6 +38,7 @@ function formatDate(iso: string): string {
 export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
+  const [restoringSession, setRestoringSession] = useState(true);
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
@@ -57,6 +65,52 @@ export default function AdminPage() {
     [],
   );
 
+  const clearStoredSession = useCallback(() => {
+    localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+  }, []);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+    if (!raw) {
+      setRestoringSession(false);
+      return;
+    }
+
+    let parsed: AdminSessionState | null = null;
+    try {
+      parsed = JSON.parse(raw) as AdminSessionState;
+    } catch {
+      clearStoredSession();
+      setRestoringSession(false);
+      return;
+    }
+
+    if (
+      !parsed?.password ||
+      typeof parsed.password !== "string" ||
+      typeof parsed.authenticatedAt !== "number"
+    ) {
+      clearStoredSession();
+      setRestoringSession(false);
+      return;
+    }
+
+    if (Date.now() - parsed.authenticatedAt > ADMIN_SESSION_TTL_MS) {
+      clearStoredSession();
+      setRestoringSession(false);
+      return;
+    }
+
+    setPassword(parsed.password);
+    fetchDocuments(parsed.password)
+      .then(() => setAuthed(true))
+      .catch(() => {
+        clearStoredSession();
+        setAuthed(false);
+      })
+      .finally(() => setRestoringSession(false));
+  }, [clearStoredSession, fetchDocuments]);
+
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
     setAuthError(null);
@@ -64,6 +118,11 @@ export default function AdminPage() {
     try {
       await fetchDocuments(password);
       setAuthed(true);
+      const session: AdminSessionState = {
+        password,
+        authenticatedAt: Date.now(),
+      };
+      localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(session));
     } catch (err) {
       const msg =
         err instanceof Error && err.message.includes("401")
@@ -154,6 +213,7 @@ export default function AdminPage() {
   }
 
   function handleLogout() {
+    clearStoredSession();
     setPassword("");
     setAuthed(false);
     setDocuments([]);
@@ -206,10 +266,14 @@ export default function AdminPage() {
 
             <button
               type="submit"
-              disabled={authLoading || !password}
+              disabled={restoringSession || authLoading || !password}
               className="w-full rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {authLoading ? "Verifying…" : "Unlock"}
+              {restoringSession
+                ? "Restoring session…"
+                : authLoading
+                  ? "Verifying…"
+                  : "Unlock"}
             </button>
           </form>
         </div>
