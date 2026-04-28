@@ -24,9 +24,9 @@ oregonyouthsoccer.org
 |---|---|---|
 | Hosting / serverless functions | Vercel | Free/Pro tier |
 | Embeddings | OpenAI `text-embedding-3-small` | 1536 dimensions, cosine similarity |
-| Generation | Anthropic Claude Sonnet | claude-sonnet-4-5 |
+| Generation | Anthropic Claude Sonnet | model string in `GENERATION_MODEL` env var |
 | Vector database | Pinecone serverless | Free tier, `oysa-docs` index |
-| Frontend framework | Next.js (App Router) | React, TypeScript optional |
+| Frontend framework | Next.js (App Router) | React 19, TypeScript — all files `.ts`/`.tsx` |
 
 ## Key Design Decisions
 
@@ -41,19 +41,33 @@ oregonyouthsoccer.org
 ```
 /
 ├── app/
-│   ├── page.jsx              # Public chat widget UI
+│   ├── page.tsx              # Public chat widget UI
 │   ├── admin/
-│   │   └── page.jsx          # Password-protected document management UI
+│   │   └── page.tsx          # Password-protected document management UI
 │   └── api/
 │       ├── chat/
-│       │   └── route.js      # POST: messages[] → retrieve → generate → reply
-│       └── ingest/
-│           └── route.js      # POST: file upload → chunk → embed → upsert to Pinecone
+│       │   └── route.ts      # POST: messages[] → retrieve → generate → reply
+│       ├── ingest/
+│       │   └── route.ts      # POST: file upload → chunk → embed → upsert to Pinecone
+│       └── admin/
+│           └── documents/
+│               ├── route.ts              # GET: list documents
+│               └── [filename]/
+│                   └── route.ts          # DELETE: remove document + chunks
 ├── lib/
-│   ├── clients.js            # Singleton instances: OpenAI, Anthropic, Pinecone
-│   └── embed.js              # embedText(text) → float[1536] via OpenAI
+│   ├── auth.ts               # requireAdmin() — x-admin-password header check
+│   ├── chunk.ts              # chunkText() — token-based text chunking
+│   ├── clients.ts            # Singleton instances: OpenAI, Anthropic, Pinecone
+│   ├── embed.ts              # embedText(text) → float[1536] via OpenAI
+│   ├── extract.ts            # extractText() — PDF and DOCX text extraction
+│   ├── format.ts             # formatBytes(), normalizeFilename()
+│   ├── pinecone-readiness.ts # ensureIndexReady() — cached index health check
+│   └── prompt.ts             # buildSystemPrompt() — Claude system prompt builder
 ├── scripts/
-│   └── create-index.mjs     # One-time Pinecone index creation (run once, then archive)
+│   ├── create-index.mjs     # One-time Pinecone index creation (idempotent)
+│   ├── smoke-embed.mjs      # Smoke test: OpenAI embeddings API
+│   ├── smoke-pinecone.mjs   # Smoke test: Pinecone index shape
+│   └── smoke-claude.mjs     # Smoke test: Anthropic API + GENERATION_MODEL validity
 ├── .env.local                # Local dev secrets (gitignored)
 └── .cursorrules              # Cursor agent instructions
 ```
@@ -66,6 +80,7 @@ ANTHROPIC_API_KEY=sk-ant-...       # Anthropic — generation only
 PINECONE_API_KEY=...               # Pinecone vector DB
 PINECONE_INDEX_NAME=oysa-docs      # Pinecone index name
 ADMIN_PASSWORD=...                 # Simple password for admin UI access
+GENERATION_MODEL=claude-sonnet-4-6 # Anthropic model string — verify at https://docs.anthropic.com
 ```
 
 ## RAG Pipeline
@@ -83,7 +98,7 @@ ADMIN_PASSWORD=...                 # Simple password for admin UI access
 2. Latest user message embedded via OpenAI → query vector
 3. Pinecone queried for top 5 most similar chunks (cosine similarity)
 4. Retrieved chunks + conversation history sent to Claude with system prompt
-5. Claude response streamed back to UI
+5. Claude response returned to UI with source citations
 
 ## System Prompt Constraints
 
@@ -106,14 +121,37 @@ The admin interface must be usable by a **non-technical administrator**. Require
 
 - Chunk size: ~400 tokens
 - Chunk overlap: ~50 tokens (to avoid cutting context at boundaries)
-- Metadata stored per vector: `{ filename, chunkIndex, totalChunks, text }`
-- Namespace: use `production` namespace in Pinecone (allows future `staging` namespace)
+- Metadata stored per chunk vector: `{ filename, originalFilename, chunkIndex, totalChunks, text }`
+- Metadata stored per header vector: `{ filename, originalFilename, uploadDate, fileSizeBytes, fileSizeDisplay, mimeType, totalChunks, chunkIds, uploadedBy }`
+- Namespace: use `production` namespace for chunks, `headers` namespace for document metadata
 
 ## Deployment
 
 - Production URL: `chat.oregonyouthsoccer.org` (CNAME → Vercel deployment)
 - Every push to `main` triggers automatic Vercel redeploy
 - Environment variables managed in Vercel dashboard (never in source)
+
+## Local Verification
+
+Run all three smoke checks in sequence to confirm every external service is reachable before developing or deploying:
+
+```bash
+npm run smoke
+```
+
+This runs:
+1. `smoke-embed.mjs` — calls OpenAI `text-embedding-3-small`, asserts a 1536-element array of finite floats
+2. `smoke-pinecone.mjs` — calls `describeIndex`, asserts `dimension === 1536` and `metric === "cosine"`
+3. `smoke-claude.mjs` — sends a minimal request to Anthropic, reads the model from `GENERATION_MODEL`, and asserts a non-empty text reply back. **Fails immediately if `GENERATION_MODEL` is unset or the model string is invalid** — this is the most common first-deploy failure.
+
+### Manual end-to-end flow
+
+Run once after any significant change to the ingest or chat pipeline:
+
+1. `npm run dev` → open `http://localhost:3000/admin`, enter `ADMIN_PASSWORD`, upload a small known PDF
+2. Open `http://localhost:3000`, ask a question whose answer is in that PDF — confirm a reply with the document cited as a source chip
+3. Delete the document from `/admin`, ask the same question — confirm a graceful "I don't have information about that" response
+4. *(Fresh Pinecone project only — the existing `oysa-docs` index is already provisioned):* `npm run create-index`
 
 ## License
 
