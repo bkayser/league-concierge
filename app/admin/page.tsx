@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowClockwise, Trash } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel serverless body limit headroom)
@@ -545,7 +546,7 @@ export default function AdminPage() {
                         {doc.totalChunks ?? "—"}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-4">
+                        <div className="flex items-center justify-end gap-1">
                           {doc.sourceType === "url" && (
                             <button
                               onClick={() => handleRefresh(doc)}
@@ -553,11 +554,30 @@ export default function AdminPage() {
                                 refreshingFilename === doc.filename ||
                                 deletingFilename === doc.filename
                               }
-                              className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              aria-label="Refresh"
+                              title="Refresh"
+                              className="group p-1.5 rounded text-blue-500 hover:text-blue-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                             >
-                              {refreshingFilename === doc.filename
-                                ? "Refreshing…"
-                                : "Refresh"}
+                              {refreshingFilename === doc.filename ? (
+                                <ArrowClockwise
+                                  size={18}
+                                  weight="fill"
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <>
+                                  <ArrowClockwise
+                                    size={18}
+                                    weight="regular"
+                                    className="group-hover:hidden"
+                                  />
+                                  <ArrowClockwise
+                                    size={18}
+                                    weight="fill"
+                                    className="hidden group-hover:block"
+                                  />
+                                </>
+                              )}
                             </button>
                           )}
                           <button
@@ -566,11 +586,26 @@ export default function AdminPage() {
                               deletingFilename === doc.filename ||
                               refreshingFilename === doc.filename
                             }
-                            className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Delete"
+                            title="Delete"
+                            className="group p-1.5 rounded text-red-500 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                           >
-                            {deletingFilename === doc.filename
-                              ? "Deleting…"
-                              : "Delete"}
+                            {deletingFilename === doc.filename ? (
+                              <Trash size={18} weight="fill" />
+                            ) : (
+                              <>
+                                <Trash
+                                  size={18}
+                                  weight="regular"
+                                  className="group-hover:hidden"
+                                />
+                                <Trash
+                                  size={18}
+                                  weight="fill"
+                                  className="hidden group-hover:block"
+                                />
+                              </>
+                            )}
                           </button>
                         </div>
                       </td>
