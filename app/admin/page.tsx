@@ -301,6 +301,8 @@ export default function AdminPage() {
     ok: boolean;
     pageTitle?: string;
     totalChunks?: number;
+    filename?: string;
+    url?: string;
     error?: string;
   }> {
     try {
@@ -314,6 +316,8 @@ export default function AdminPage() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
+        filename?: string;
+        url?: string;
         pageTitle?: string;
         totalChunks?: number;
         error?: string;
@@ -324,10 +328,15 @@ export default function AdminPage() {
           error: data.error ?? `Failed (HTTP ${res.status}).`,
         };
       }
+
+      // Optimistically prepend the new source so the list updates immediately,
+      // before Pinecone propagates the upsert to listPaginated().
       return {
         ok: true,
         pageTitle: data.pageTitle,
         totalChunks: data.totalChunks,
+        filename: data.filename,
+        url: data.url,
       };
     } catch {
       return {
@@ -387,6 +396,21 @@ export default function AdminPage() {
               : s,
           ),
         );
+        if (result.ok && result.filename) {
+          const optimistic: DocumentMeta = {
+            filename: result.filename,
+            originalFilename: result.pageTitle ?? url,
+            sourceType: "url",
+            url: result.url,
+            pageTitle: result.pageTitle,
+            uploadDate: new Date().toISOString(),
+            totalChunks: result.totalChunks ?? 0,
+          };
+          setDocuments((prev) => [
+            optimistic,
+            ...prev.filter((d) => d.filename !== result.filename),
+          ]);
+        }
       }
       await fetchDocuments(password);
       const allOk = initialStatuses.length > 0;
