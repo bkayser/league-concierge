@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "create-index": "node --env-file=.env.local scripts/create-index.mjs",
+    "smoke": "node --env-file=.env.local scripts/smoke-embed.mjs && node --env-file=.env.local scripts/smoke-pinecone.mjs && node --env-file=.env.local scripts/smoke-claude.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

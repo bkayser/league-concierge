@@ -8,14 +8,14 @@ The corpus is a small set of operational documents and competition rules (~50 PD
 ## Stack — Do Not Deviate Without Asking
 - **Framework**: Next.js with App Router
 - **Embeddings**: OpenAI `text-embedding-3-small` (1536 dimensions) — embeddings ONLY, not generation
-- **Generation**: Anthropic Claude (`claude-sonnet-4-6`) — generation ONLY, not embeddings
+- **Generation**: Anthropic Claude (read from `GENERATION_MODEL` env var, current value `claude-sonnet-4-6`) — generation ONLY, not embeddings
 - **Vector DB**: Pinecone serverless, index name `oysa-docs`, dimension 1536, metric cosine
 - **Hosting**: Vercel serverless functions
 
 ## Shared Client Instances
-Always import OpenAI, Anthropic, and Pinecone clients from `@/lib/clients.js`.
+Always import OpenAI, Anthropic, and Pinecone clients from `@/lib/clients.ts`.
 Never instantiate these clients inline in route handlers or components.
-The embed utility lives in `@/lib/embed.js` — use `embedText()` from there.
+The embed utility lives in `@/lib/embed.ts` — use `embedText()` from there.
 
 ## Environment Variables
 Use only these env var names — do not introduce new ones without updating README and .env.local:
@@ -41,7 +41,7 @@ Use only these env var names — do not introduce new ones without updating READ
 - Retrieve top 5 chunks from Pinecone (topK: 5)
 - Pass retrieved chunks as part of the system prompt context, not as a user message
 - Pass full conversation history to Claude as the messages array
-- Claude model string: `claude-sonnet-4-6`
+- Claude model string: read from `process.env.GENERATION_MODEL` (current canonical value: `claude-sonnet-4-6`; verify at https://docs.anthropic.com)
 - Max tokens for Claude response: 1024
 
 ## System Prompt for Claude — Non-Negotiable Constraints
@@ -79,12 +79,14 @@ ID format: `"header::{filename}"`
   values: embeddingOfFirstChunk,
   metadata: {
     type: "header",
-    filename: string,          // e.g. "2024-competition-rules.pdf"
-    uploadDate: string,        // ISO 8601, e.g. "2026-04-27T14:32:00Z"
+    filename: string,          // normalized, e.g. "2024-competition-rules.pdf" — Pinecone key
+    originalFilename: string,  // raw as uploaded, e.g. "2024 Competition Rules.pdf" — display only
+    uploadDate: string,        // ISO 8601, e.g. "2026-04-27T14:32:00.000Z"
     fileSizeBytes: number,     // raw byte count
     fileSizeDisplay: string,   // human-readable, e.g. "278 KB"
     mimeType: string,          // "application/pdf" or "application/vnd.openxmlformats..."
     totalChunks: number,
+    chunkIds: string[],        // e.g. ["2024-competition-rules.pdf::chunk::0", ...]
     uploadedBy: "admin"
   }
 }
@@ -97,13 +99,14 @@ ID format: `"{filename}::chunk::{chunkIndex}"`
 ```javascript
 {
   id: `${filename}::chunk::${chunkIndex}`,
-  values: chunkEmbedding,     // 1536 floats from text-embedding-3-small
+  values: chunkEmbedding,       // 1536 floats from text-embedding-3-small
   metadata: {
     type: "chunk",
-    filename: string,
+    filename: string,           // normalized — matches header record key
+    originalFilename: string,   // raw as uploaded — returned in chat sources array
     chunkIndex: number,
     totalChunks: number,
-    text: string              // original chunk text — returned at query time as context
+    text: string                // original chunk text — returned at query time as context
   }
 }
 ```
@@ -114,32 +117,65 @@ ID format: `"{filename}::chunk::{chunkIndex}"`
 - Chunk 0's embedding is reused as the header record vector
 
 ## Listing Documents in Admin UI
-Query the `"headers"` namespace with a metadata filter — do NOT scan the `"production"` namespace:
+Use `listPaginated()` then `fetch({ ids })` on the `"headers"` namespace.
+Do NOT use a zero-vector query — cosine similarity is undefined for a zero vector and
+results are unpredictable. Do NOT scan the `"production"` namespace.
+
+The corpus is capped at ~50 documents, so a single `listPaginated()` call is sufficient.
+Do not implement a pagination loop.
 
 ```javascript
-await index.namespace("headers").query({
-  vector: new Array(1536).fill(0),   // zero vector — filtering, not similarity search
-  topK: 200,
-  filter: { type: { $eq: "header" } },
-  includeMetadata: true
-});
+const headerNs = index.namespace("headers");
+const idsResponse = await headerNs.listPaginated();
+const ids = (idsResponse.vectors ?? [])
+  .map((v) => v.id)
+  .filter((id) => typeof id === "string");
+if (ids.length === 0) return { documents: [] };
+const fetched = await headerNs.fetch({ ids });
+const documents = Object.values(fetched.records ?? {}).map((r) => r.metadata);
 ```
 
 ## Deleting a Document
-Delete BOTH the header record and all chunk records when a document is removed:
+ID-based deletion is required. Pinecone's metadata-filtered `deleteMany` is NOT available
+on the Starter (free) tier for serverless indexes — do not use `deleteMany({ filter: ... })`.
+
+The `chunkIds` array stored in the header metadata is the source of truth for which chunk
+IDs to delete. Always delete both the production chunks and the header record.
 
 ```javascript
-// 1. Delete the header
-await index.namespace("headers").deleteOne(`header::${filename}`);
+const headerId = `header::${filename}`;
+const headerNs = index.namespace("headers");
 
-// 2. Delete all chunks for this file
-await index.namespace("production").deleteMany({
-  filter: { filename: { $eq: filename } }
-});
+// 1. Fetch the header to get chunkIds
+const fetched = await headerNs.fetch({ ids: [headerId] });
+const header = (fetched.records ?? {})[headerId];
+if (!header) return; // already deleted
+
+// 2. Delete production chunks by ID
+const chunkIds = header.metadata?.chunkIds ?? [];
+if (chunkIds.length > 0) {
+  await index.namespace("production").deleteMany({ ids: chunkIds });
+}
+
+// 3. Delete the header record
+await headerNs.deleteOne({ id: headerId });
 ```
 
-Always delete both. Leaving orphaned chunks in `"production"` after deleting a header
-means stale content remains retrievable by the chat pipeline.
+Leaving orphaned chunks in `"production"` after deleting a header means stale content
+remains retrievable by the chat pipeline.
+
+## Filename Normalization
+Two filename fields are stored per document. Never mix them up.
+
+- `filename` — normalized version. Produced by `normalizeFilename(raw)` in `lib/format.ts`.
+  Used as the Pinecone ID prefix, in URL path segments, and for all internal operations.
+  Example: `"2024-competition-rules.pdf"`.
+- `originalFilename` — raw filename exactly as uploaded. Used only for display in the admin
+  UI table and as the `sources` array values returned to the public chat UI.
+  Example: `"2024 Competition Rules.pdf"`.
+
+The admin DELETE endpoint URL carries `filename` (normalized) because it is the Pinecone key.
+The `window.confirm` dialog and the chat source chips show `originalFilename` for readability.
 
 ## CORS / Embedding Strategy
 - The app is embedded via iframe on oregonyouthsoccer.org — do NOT add CORS headers to API routes
