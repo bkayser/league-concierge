@@ -1,7 +1,21 @@
-import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import * as cheerio from "cheerio";
 import mammoth from "mammoth";
 import { extractText as extractPdfText } from "unpdf";
+
+const CONTENT_SELECTORS = ["main", "article", '[role="main"]'];
+const STRIP_SELECTORS = [
+  "script",
+  "style",
+  "noscript",
+  "nav",
+  "header",
+  "footer",
+  "aside",
+  '[role="navigation"]',
+  '[role="banner"]',
+  '[role="contentinfo"]',
+  '[role="complementary"]',
+];
 
 export const PDF_MIME = "application/pdf";
 export const DOCX_MIME =
@@ -30,6 +44,10 @@ export async function extractText(
   throw new Error(`Unsupported MIME type: "${mimeType}"`);
 }
 
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 export async function extractFromUrl(
   url: string
 ): Promise<{ text: string; title: string }> {
@@ -40,11 +58,22 @@ export async function extractFromUrl(
     throw new Error(`HTTP ${res.status} fetching ${url}`);
   }
   const html = await res.text();
-  const dom = new JSDOM(html, { url });
-  const reader = new Readability(dom.window.document);
-  const article = reader.parse();
-  if (!article?.textContent?.trim()) {
+  const $ = cheerio.load(html);
+
+  const title = $("title").first().text().trim() || url;
+
+  $(STRIP_SELECTORS.join(",")).remove();
+
+  for (const selector of CONTENT_SELECTORS) {
+    const text = normalizeWhitespace($(selector).text());
+    if (text.length >= 100) {
+      return { text, title };
+    }
+  }
+
+  const bodyText = normalizeWhitespace($("body").text());
+  if (!bodyText) {
     throw new Error("Could not extract readable content from the page.");
   }
-  return { text: article.textContent, title: article.title || url };
+  return { text: bodyText, title };
 }
