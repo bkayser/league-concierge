@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface DisplayMessage {
   role: "user" | "assistant";
@@ -148,13 +150,46 @@ export default function ChatPage() {
                 className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
               >
                 <div
-                  className={`px-4 py-3 rounded-2xl max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`px-4 py-3 rounded-2xl max-w-[85%] text-sm leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-green-700 text-white rounded-br-sm"
+                      ? "bg-green-700 text-white rounded-br-sm whitespace-pre-wrap"
                       : "bg-white text-gray-900 border border-gray-200 shadow-xs rounded-bl-sm"
                   }`}
                 >
-                  {msg.content}
+                  {msg.role === "user" ? (
+                    msg.content
+                  ) : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                        em: ({ children }) => <em className="italic">{children}</em>,
+                        h1: ({ children }) => <h1 className="text-base font-bold mt-3 mb-1">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-sm font-bold mt-3 mb-1">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+                        ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
+                        li: ({ children }) => <li>{children}</li>,
+                        code: ({ children, className }) =>
+                          className ? (
+                            <code className="block bg-gray-100 rounded p-2 text-xs overflow-x-auto my-1 font-mono">{children}</code>
+                          ) : (
+                            <code className="bg-gray-100 rounded px-1 text-xs font-mono">{children}</code>
+                          ),
+                        pre: ({ children }) => <pre className="my-1">{children}</pre>,
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-2 border-gray-300 pl-3 text-gray-600 my-2">{children}</blockquote>
+                        ),
+                        a: ({ href, children }) => (
+                          <a href={href} className="text-green-700 underline hover:text-green-900" target="_blank" rel="noopener noreferrer">{children}</a>
+                        ),
+                        hr: () => <hr className="my-3 border-gray-200" />,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  )}
                 </div>
                 {msg.role === "assistant" &&
                   msg.sources &&
