@@ -22,3 +22,14 @@ export function normalizeFilename(raw: string): string {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9._-]/g, "");
 }
+
+export function normalizeUrl(url: string): string {
+  const withoutProtocol = url.replace(/^https?:\/\//, "");
+  const slug = withoutProtocol
+    .toLowerCase()
+    .replace(/\//g, "--")
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/-{2,}/g, "--")
+    .replace(/^--|--$/, "");
+  return `url--${slug}`;
+}
