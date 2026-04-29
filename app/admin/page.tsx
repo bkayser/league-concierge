@@ -162,45 +162,59 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-    if (!raw) {
-      setRestoringSession(false);
-      return;
-    }
+    let cancelled = false;
 
-    let parsed: AdminSessionState | null = null;
-    try {
-      parsed = JSON.parse(raw) as AdminSessionState;
-    } catch {
-      clearStoredSession();
-      setRestoringSession(false);
-      return;
-    }
+    async function restoreSession() {
+      const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+      if (!raw) {
+        if (!cancelled) setRestoringSession(false);
+        return;
+      }
 
-    if (
-      !parsed?.password ||
-      typeof parsed.password !== "string" ||
-      typeof parsed.authenticatedAt !== "number"
-    ) {
-      clearStoredSession();
-      setRestoringSession(false);
-      return;
-    }
-
-    if (Date.now() - parsed.authenticatedAt > ADMIN_SESSION_TTL_MS) {
-      clearStoredSession();
-      setRestoringSession(false);
-      return;
-    }
-
-    setPassword(parsed.password);
-    fetchDocuments(parsed.password)
-      .then(() => setAuthed(true))
-      .catch(() => {
+      let parsed: AdminSessionState | null = null;
+      try {
+        parsed = JSON.parse(raw) as AdminSessionState;
+      } catch {
         clearStoredSession();
-        setAuthed(false);
-      })
-      .finally(() => setRestoringSession(false));
+        if (!cancelled) setRestoringSession(false);
+        return;
+      }
+
+      if (
+        !parsed?.password ||
+        typeof parsed.password !== "string" ||
+        typeof parsed.authenticatedAt !== "number"
+      ) {
+        clearStoredSession();
+        if (!cancelled) setRestoringSession(false);
+        return;
+      }
+
+      if (Date.now() - parsed.authenticatedAt > ADMIN_SESSION_TTL_MS) {
+        clearStoredSession();
+        if (!cancelled) setRestoringSession(false);
+        return;
+      }
+
+      if (cancelled) return;
+      setPassword(parsed.password);
+
+      try {
+        await fetchDocuments(parsed.password);
+        if (!cancelled) setAuthed(true);
+      } catch {
+        clearStoredSession();
+        if (!cancelled) setAuthed(false);
+      } finally {
+        if (!cancelled) setRestoringSession(false);
+      }
+    }
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [clearStoredSession, fetchDocuments]);
 
   async function handleUnlock(e: React.FormEvent) {
