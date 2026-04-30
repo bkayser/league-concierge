@@ -145,7 +145,7 @@ export default function ChatPage() {
               clipRule="evenodd"
             />
           </svg>
-          <h1 className="text-base font-semibold tracking-tight">OYSA Rules Assistant</h1>
+          <h1 className="text-base font-semibold tracking-tight">OYSA Resource Page</h1>
         </div>
         {messages.length > 0 && (
           <button
@@ -177,9 +177,9 @@ export default function ChatPage() {
               </svg>
             </div>
             <div>
-              <p className="text-gray-800 font-medium">OYSA Rules Assistant</p>
+              <p className="text-gray-800 font-medium">Ask Footy!</p>
               <p className="text-sm text-gray-500 mt-1 max-w-xs">
-                Ask me anything about Oregon Youth Soccer Association rules and regulations.
+                Ask me anything about Youth Soccer in Oregon.  I know all about the leagues and rules of different competitions, and I can tell you just about anything about OYSA!
               </p>
             </div>
           </div>
