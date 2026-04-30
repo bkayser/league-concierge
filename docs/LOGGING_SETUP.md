@@ -69,7 +69,8 @@ CREATE TABLE sources (
   file_size_display TEXT NOT NULL,
   mime_type         TEXT NOT NULL,
   total_chunks      INTEGER NOT NULL,
-  is_active         BOOLEAN NOT NULL DEFAULT true
+  is_active         BOOLEAN NOT NULL DEFAULT true,
+  url               TEXT        -- populated for URL-sourced documents; NULL for file uploads
 );
 
 -- Interaction log
