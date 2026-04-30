@@ -364,7 +364,7 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
-            placeholder="Ask about OYSA rules…"
+            placeholder="Ask about OYSA…"
             autoComplete="off"
             className="flex-1 rounded-full border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-green-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-green-600 disabled:opacity-60 transition-colors"
           />
