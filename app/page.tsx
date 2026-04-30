@@ -131,7 +131,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <header className="shrink-0 bg-green-700 text-white px-4 py-3 flex items-center justify-between shadow-sm">
+      <header className="shrink-0 text-white px-4 py-3 flex items-center justify-between shadow-sm" style={{ backgroundColor: "#dd0018" }}>
         <div className="flex items-center gap-2">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -151,7 +151,7 @@ export default function ChatPage() {
         {messages.length > 0 && (
           <button
             onClick={handleClear}
-            className="text-xs font-medium text-green-100 hover:text-white transition-colors"
+            className="text-xs font-medium text-red-100 hover:text-white transition-colors"
           >
             New Chat
           </button>
