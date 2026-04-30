@@ -1,5 +1,6 @@
 "use client";
 
+import { ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -257,10 +258,14 @@ export default function ChatPage() {
                   ratingEnabled !== false && (
                     <div className="mt-1.5 max-w-[85%]">
                       {ratedMessages[msg.interactionId] === "up" && (
-                        <p className="text-xs text-gray-400">You rated this 👍</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                          You rated this <ThumbsUp size={12} weight="fill" className="text-green-600" aria-hidden="true" />
+                        </p>
                       )}
                       {ratedMessages[msg.interactionId] === "down" && (
-                        <p className="text-xs text-gray-400">You rated this 👎</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                          You rated this <ThumbsDown size={12} weight="fill" className="text-red-500" aria-hidden="true" />
+                        </p>
                       )}
                       {!ratedMessages[msg.interactionId] &&
                         pendingDownId !== msg.interactionId && (
@@ -270,11 +275,11 @@ export default function ChatPage() {
                               onClick={() =>
                                 void submitRating(msg.interactionId!, 1, null)
                               }
-                              className="text-base leading-none hover:scale-110 transition-transform"
+                              className="text-gray-400 hover:text-green-600 hover:scale-110 transition-all"
                               aria-label="Helpful"
                               title="Helpful"
                             >
-                              👍
+                              <ThumbsUp size={15} weight="regular" />
                             </button>
                             <button
                               type="button"
@@ -282,11 +287,11 @@ export default function ChatPage() {
                                 setPendingDownId(msg.interactionId!);
                                 setPendingDownComment("");
                               }}
-                              className="text-base leading-none hover:scale-110 transition-transform"
+                              className="text-gray-400 hover:text-red-500 hover:scale-110 transition-all"
                               aria-label="Not helpful"
                               title="Not helpful"
                             >
-                              👎
+                              <ThumbsDown size={15} weight="regular" />
                             </button>
                           </div>
                         )}

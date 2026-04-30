@@ -4,6 +4,8 @@ import {
   ArrowClockwise,
   CaretDown,
   CheckCircle,
+  ThumbsDown,
+  ThumbsUp,
   Trash,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -1197,11 +1199,13 @@ export default function AdminPage() {
                           </details>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {row.rating === 1
-                            ? "👍"
-                            : row.rating === -1
-                              ? "👎"
-                              : "—"}
+                          {row.rating === 1 ? (
+                            <ThumbsUp className="inline text-green-600" weight="fill" size={16} aria-label="Helpful" />
+                          ) : row.rating === -1 ? (
+                            <ThumbsDown className="inline text-red-500" weight="fill" size={16} aria-label="Not helpful" />
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-500 max-w-xs">
                           {row.sources_display || "—"}
