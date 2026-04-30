@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OYSA Rules Chatbot",
+  title: "OYSA Chatbot",
   description:
-    "Ask questions about Oregon Youth Soccer Association rules and regulations.",
+    "Ask questions about Oregon Youth Soccer Association.",
 };
 
 export default function RootLayout({
