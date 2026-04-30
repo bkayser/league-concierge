@@ -2,10 +2,27 @@ import type { NextRequest } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { getIndex } from "@/lib/clients";
+import { getSources, isLoggingEnabled } from "@/lib/db";
 
 export async function GET(request: NextRequest): Promise<Response> {
   const authError = requireAdmin(request);
   if (authError) return authError;
+
+  if (isLoggingEnabled()) {
+    const rows = await getSources();
+    const documents = rows.map((row) => ({
+      filename: row.filename,
+      originalFilename: row.original_filename,
+      uploadDate: row.upload_date,
+      fileSizeBytes: row.file_size_bytes,
+      fileSizeDisplay: row.file_size_display,
+      mimeType: row.mime_type,
+      totalChunks: row.total_chunks,
+      sourceType: row.mime_type === "text/html" ? "url" : "file",
+      useCount: row.use_count ?? 0,
+    }));
+    return Response.json({ documents });
+  }
 
   const headerNs = getIndex().namespace("headers");
 

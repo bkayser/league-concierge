@@ -2,6 +2,7 @@ import type { MessageParam } from "@anthropic-ai/sdk/resources/messages/messages
 import type { NextRequest } from "next/server";
 
 import { anthropic, getIndex } from "@/lib/clients";
+import { isLoggingEnabled, logInteraction } from "@/lib/db";
 import { embedText } from "@/lib/embed";
 import { buildSystemPrompt } from "@/lib/prompt";
 
@@ -53,8 +54,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     return json(400, { error: "Invalid JSON body." });
   }
 
-  const { messages: rawMessages } =
-    (body as { messages?: unknown }) ?? {};
+  const { messages: rawMessages, session_id: rawSessionId } =
+    (body as { messages?: unknown; session_id?: unknown }) ?? {};
 
   if (!isValidMessages(rawMessages)) {
     return json(400, {
@@ -65,6 +66,15 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const messages: ClientMessage[] = rawMessages;
   const latestUserMessage = messages[messages.length - 1].content;
+
+  // Use the provided session_id or generate a fallback so every interaction
+  // has a valid UUID even when called from old clients that don't send it.
+  const sessionId =
+    typeof rawSessionId === "string" && rawSessionId.length > 0
+      ? rawSessionId
+      : crypto.randomUUID();
+
+  const startTime = Date.now();
 
   // Embed only the latest user message for retrieval (not the full history)
   let queryVector: number[];
@@ -101,6 +111,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   ];
 
   const systemPrompt = buildSystemPrompt(contextBlock);
+  const interactionId = crypto.randomUUID();
 
   let claudeResponse: Awaited<ReturnType<typeof anthropic.messages.create>>;
   try {
@@ -123,5 +134,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     return json(500, { error: "Unexpected response format from Claude." });
   }
 
-  return json(200, { reply: firstBlock.text, sources });
+  const latencyMs = Date.now() - startTime;
+  const responsePayload = { reply: firstBlock.text, sources, interactionId };
+
+  if (isLoggingEnabled()) {
+    logInteraction({
+      id: interactionId,
+      sessionId,
+      prompt: latestUserMessage,
+      response: firstBlock.text,
+      sources,
+      modelVersion: model,
+      chunksRetrieved: results.matches.length,
+      latencyMs,
+    }).catch((err) => console.error("Interaction log write failed:", err));
+  }
+
+  return json(200, responsePayload);
 }
