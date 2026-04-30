@@ -102,14 +102,31 @@ export async function POST(request: NextRequest): Promise<Response> {
     })
     .join("\n\n---\n\n");
 
-  // Deduplicate source filenames using originalFilename for human-readable citations
-  const sources = [
-    ...new Set(
+  // Deduplicate by normalized filename (the unique key) so each document
+  // appears at most once, preserving both names for logging and display.
+  const sourceMeta = [
+    ...new Map(
       results.matches
-        .map((m) => m.metadata?.originalFilename)
-        .filter((v): v is string => typeof v === "string")
-    ),
+        .filter(
+          (m) =>
+            typeof m.metadata?.filename === "string" &&
+            typeof m.metadata?.originalFilename === "string",
+        )
+        .map((m) => [
+          m.metadata!.filename as string,
+          {
+            filename: m.metadata!.filename as string,
+            originalFilename: m.metadata!.originalFilename as string,
+            totalChunks:
+              typeof m.metadata?.totalChunks === "number"
+                ? (m.metadata.totalChunks as number)
+                : undefined,
+          },
+        ]),
+    ).values(),
   ];
+  // Human-readable list for the response payload and UI source chips
+  const sources = sourceMeta.map((s) => s.originalFilename);
 
   const systemPrompt = buildSystemPrompt(contextBlock);
   const interactionId = crypto.randomUUID();
@@ -148,7 +165,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         sessionId,
         prompt: latestUserMessage,
         response: firstBlock.text,
-        sources,
+        sources: sourceMeta,
         modelVersion: model,
         chunksRetrieved: results.matches.length,
         latencyMs,
