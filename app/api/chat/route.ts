@@ -1,5 +1,6 @@
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { NextRequest } from "next/server";
+import { after } from "next/server";
 
 import { anthropic, getIndex } from "@/lib/clients";
 import { isLoggingEnabled, logInteraction } from "@/lib/db";
@@ -138,16 +139,21 @@ export async function POST(request: NextRequest): Promise<Response> {
   const responsePayload = { reply: firstBlock.text, sources, interactionId };
 
   if (isLoggingEnabled()) {
-    logInteraction({
-      id: interactionId,
-      sessionId,
-      prompt: latestUserMessage,
-      response: firstBlock.text,
-      sources,
-      modelVersion: model,
-      chunksRetrieved: results.matches.length,
-      latencyMs,
-    }).catch((err) => console.error("Interaction log write failed:", err));
+    // Use after() so Vercel keeps the function context alive until the DB
+    // write completes — a bare .catch() promise is frozen when the response
+    // is sent, causing the INSERT to never execute on Vercel serverless.
+    after(
+      logInteraction({
+        id: interactionId,
+        sessionId,
+        prompt: latestUserMessage,
+        response: firstBlock.text,
+        sources,
+        modelVersion: model,
+        chunksRetrieved: results.matches.length,
+        latencyMs,
+      }).catch((err) => console.error("Interaction log write failed:", err)),
+    );
   }
 
   return json(200, responsePayload);
