@@ -38,6 +38,22 @@ interface DocumentMeta {
   sourceType?: "file" | "url";
   url?: string;
   pageTitle?: string;
+  useCount?: number;
+}
+
+interface InteractionRow {
+  id: string;
+  session_id: string;
+  prompt: string;
+  response: string;
+  rating: number | null;
+  rating_comment: string | null;
+  model_version: string;
+  chunks_retrieved: number;
+  latency_ms: number;
+  created_at: string;
+  updated_at: string | null;
+  sources_display: string;
 }
 
 function formatDate(iso: string): string {
@@ -114,6 +130,12 @@ export default function AdminPage() {
   const [sortColumn, setSortColumn] = useState<SortColumn>("added");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
+  const [loggingEnabled, setLoggingEnabled] = useState(false);
+  const [activeTab, setActiveTab] = useState<"documents" | "log">("documents");
+  const [logFilter, setLogFilter] = useState<"all" | "rated" | "unrated">("all");
+  const [logRows, setLogRows] = useState<InteractionRow[]>([]);
+  const [logLoading, setLogLoading] = useState(false);
+
   const sortedDocuments = useMemo(() => {
     const list = [...documents];
     const dir = sortDirection;
@@ -155,6 +177,19 @@ export default function AdminPage() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as { documents: DocumentMeta[] };
     setDocuments(data.documents ?? []);
+  }, []);
+
+  // Probe /api/admin/log once on login to detect whether logging is enabled.
+  // Reuses the same response to load initial log rows — avoids a second request.
+  const probeAndLoadLog = useCallback(async (pwd: string) => {
+    const res = await fetch("/api/admin/log?filter=all", {
+      headers: { "x-admin-password": pwd },
+    });
+    setLoggingEnabled(res.ok);
+    if (res.ok) {
+      const data = (await res.json()) as { interactions: InteractionRow[] };
+      setLogRows(data.interactions ?? []);
+    }
   }, []);
 
   const clearStoredSession = useCallback(() => {
@@ -201,7 +236,10 @@ export default function AdminPage() {
 
       try {
         await fetchDocuments(parsed.password);
-        if (!cancelled) setAuthed(true);
+        if (!cancelled) {
+          setAuthed(true);
+          void probeAndLoadLog(parsed.password);
+        }
       } catch {
         clearStoredSession();
         if (!cancelled) setAuthed(false);
@@ -215,7 +253,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [clearStoredSession, fetchDocuments]);
+  }, [clearStoredSession, fetchDocuments, probeAndLoadLog]);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
@@ -224,6 +262,7 @@ export default function AdminPage() {
     try {
       await fetchDocuments(password);
       setAuthed(true);
+      void probeAndLoadLog(password);
       const session: AdminSessionState = {
         password,
         authenticatedAt: Date.now(),
@@ -522,7 +561,42 @@ export default function AdminPage() {
     setUrlError(null);
     setUrlsOpen(false);
     setBatchStatuses([]);
+    setLoggingEnabled(false);
+    setActiveTab("documents");
+    setLogRows([]);
+    setLogFilter("all");
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function handleFilterChange(filter: "all" | "rated" | "unrated") {
+    setLogFilter(filter);
+    setLogLoading(true);
+    try {
+      const res = await fetch(`/api/admin/log?filter=${filter}`, {
+        headers: { "x-admin-password": password },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { interactions: InteractionRow[] };
+        setLogRows(data.interactions ?? []);
+      }
+    } catch {
+      // silently fail — log view shows stale data
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
+  async function downloadCsv() {
+    const res = await fetch("/api/admin/log?download=true", {
+      headers: { "x-admin-password": password },
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `oysa-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   if (!authed) {
@@ -595,7 +669,45 @@ export default function AdminPage() {
         </button>
       </header>
 
+      {/* Tab strip — only shown when interaction logging is active */}
+      {loggingEnabled && (
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-4xl mx-auto px-6 flex">
+            <button
+              type="button"
+              onClick={() => setActiveTab("documents")}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "documents"
+                  ? "border-green-700 text-green-700"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              Documents
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("log");
+                if (logRows.length === 0 && !logLoading)
+                  void handleFilterChange(logFilter);
+              }}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "log"
+                  ? "border-green-700 text-green-700"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              Log
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+
+        {/* ── Documents tab ───────────────────────────────────────────────── */}
+        {activeTab === "documents" && (
+        <>
         {/* Upload document section */}
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
           <h2 className="text-base font-semibold text-gray-900 mb-4">
@@ -875,6 +987,9 @@ export default function AdminPage() {
                       </button>
                     </th>
                     <th className="px-6 py-3 font-medium">Chunks</th>
+                    {loggingEnabled && (
+                      <th className="px-6 py-3 font-medium">Times cited</th>
+                    )}
                     <th className="px-6 py-3 font-medium sr-only">Actions</th>
                   </tr>
                 </thead>
@@ -912,6 +1027,11 @@ export default function AdminPage() {
                       <td className="px-6 py-4 text-gray-500">
                         {doc.totalChunks ?? "—"}
                       </td>
+                      {loggingEnabled && (
+                        <td className="px-6 py-4 text-gray-500">
+                          {doc.useCount ?? 0}
+                        </td>
+                      )}
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {doc.sourceType === "url" && (
@@ -983,6 +1103,121 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+        </>
+        )}
+
+        {/* ── Log tab ─────────────────────────────────────────────────────── */}
+        {loggingEnabled && activeTab === "log" && (
+          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-gray-900">
+                Interaction Log
+              </h2>
+              <div className="flex items-center gap-3">
+                {/* Filter pills */}
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+                  {(["all", "rated", "unrated"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => void handleFilterChange(f)}
+                      className={`px-3 py-1.5 font-medium transition-colors ${
+                        logFilter === f
+                          ? "bg-green-700 text-white"
+                          : "bg-white text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                {/* CSV download */}
+                <button
+                  type="button"
+                  onClick={() => void downloadCsv()}
+                  className="text-sm font-medium text-green-700 hover:text-green-900 transition-colors"
+                >
+                  Download last 30 days (CSV)
+                </button>
+              </div>
+            </div>
+
+            {logLoading ? (
+              <div className="px-6 py-12 text-center">
+                <p className="text-sm text-gray-400">Loading…</p>
+              </div>
+            ) : logRows.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <p className="text-sm text-gray-400">No interactions found.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                    <tr>
+                      <th className="px-4 py-3 font-medium whitespace-nowrap">Time</th>
+                      <th className="px-4 py-3 font-medium">Prompt</th>
+                      <th className="px-4 py-3 font-medium">Response</th>
+                      <th className="px-4 py-3 font-medium">Rating</th>
+                      <th className="px-4 py-3 font-medium">Sources</th>
+                      <th className="px-4 py-3 font-medium whitespace-nowrap">Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {logRows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="align-top hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                          {formatDate(row.created_at)}
+                        </td>
+                        <td className="px-4 py-3 max-w-xs">
+                          <details>
+                            <summary className="cursor-pointer text-gray-900 list-none">
+                              {row.prompt.length > 80
+                                ? row.prompt.slice(0, 80) + "…"
+                                : row.prompt}
+                            </summary>
+                            <p className="mt-2 text-gray-600 whitespace-pre-wrap text-xs">
+                              {row.prompt}
+                            </p>
+                          </details>
+                        </td>
+                        <td className="px-4 py-3 max-w-xs">
+                          <details>
+                            <summary className="cursor-pointer text-gray-700 list-none">
+                              {row.response.length > 120
+                                ? row.response.slice(0, 120) + "…"
+                                : row.response}
+                            </summary>
+                            <p className="mt-2 text-gray-600 whitespace-pre-wrap text-xs">
+                              {row.response}
+                            </p>
+                          </details>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {row.rating === 1
+                            ? "👍"
+                            : row.rating === -1
+                              ? "👎"
+                              : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 max-w-xs">
+                          {row.sources_display || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                          {row.latency_ms} ms
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
       </div>
     </main>
   );

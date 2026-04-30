@@ -8,6 +8,7 @@ interface DisplayMessage {
   role: "user" | "assistant";
   content: string;
   sources?: string[];
+  interactionId?: string;
 }
 
 function TypingIndicator() {
@@ -27,6 +28,16 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Stable session UUID — reset on page refresh by design, never persisted
+  const [sessionId] = useState<string>(() => crypto.randomUUID());
+  // null = not yet probed, false = logging disabled, true = enabled
+  const [ratingEnabled, setRatingEnabled] = useState<boolean | null>(null);
+  // Track submitted ratings per interactionId
+  const [ratedMessages, setRatedMessages] = useState<Record<string, "up" | "down">>({});
+  // Thumbs-down flow: which interactionId is showing the comment textarea
+  const [pendingDownId, setPendingDownId] = useState<string | null>(null);
+  const [pendingDownComment, setPendingDownComment] = useState("");
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -50,12 +61,14 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: updated.map(({ role, content }) => ({ role, content })),
+          session_id: sessionId,
         }),
       });
 
       const data = (await res.json()) as {
         reply?: string;
         sources?: string[];
+        interactionId?: string;
         error?: string;
       };
 
@@ -70,6 +83,7 @@ export default function ChatPage() {
           role: "assistant",
           content: data.reply ?? "",
           sources: data.sources ?? [],
+          interactionId: data.interactionId,
         },
       ]);
     } catch {
@@ -80,9 +94,36 @@ export default function ChatPage() {
     }
   }
 
+  async function submitRating(
+    interactionId: string,
+    rating: 1 | -1,
+    comment: string | null,
+  ) {
+    const res = await fetch("/api/rate", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId, rating, comment }),
+    });
+    if (res.status === 404) {
+      // Logging is disabled server-side — suppress rating UI for all messages
+      setRatingEnabled(false);
+      return;
+    }
+    setRatingEnabled(true);
+    setRatedMessages((prev) => ({
+      ...prev,
+      [interactionId]: rating === 1 ? "up" : "down",
+    }));
+    setPendingDownId(null);
+    setPendingDownComment("");
+  }
+
   function handleClear() {
     setMessages([]);
     setError(null);
+    setRatedMessages({});
+    setPendingDownId(null);
+    setPendingDownComment("");
     inputRef.current?.focus();
   }
 
@@ -212,6 +253,87 @@ export default function ChatPage() {
                           {src}
                         </span>
                       ))}
+                    </div>
+                  )}
+
+                {/* Rating UI — only for assistant messages with an interactionId,
+                    hidden when ratingEnabled is false (404 from /api/rate) */}
+                {msg.role === "assistant" &&
+                  msg.interactionId &&
+                  ratingEnabled !== false && (
+                    <div className="mt-1.5 max-w-[85%]">
+                      {ratedMessages[msg.interactionId] === "up" && (
+                        <p className="text-xs text-gray-400">You rated this 👍</p>
+                      )}
+                      {ratedMessages[msg.interactionId] === "down" && (
+                        <p className="text-xs text-gray-400">You rated this 👎</p>
+                      )}
+                      {!ratedMessages[msg.interactionId] &&
+                        pendingDownId !== msg.interactionId && (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void submitRating(msg.interactionId!, 1, null)
+                              }
+                              className="text-base leading-none hover:scale-110 transition-transform"
+                              aria-label="Helpful"
+                              title="Helpful"
+                            >
+                              👍
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPendingDownId(msg.interactionId!);
+                                setPendingDownComment("");
+                              }}
+                              className="text-base leading-none hover:scale-110 transition-transform"
+                              aria-label="Not helpful"
+                              title="Not helpful"
+                            >
+                              👎
+                            </button>
+                          </div>
+                        )}
+                      {!ratedMessages[msg.interactionId] &&
+                        pendingDownId === msg.interactionId && (
+                          <div className="space-y-1.5">
+                            <textarea
+                              value={pendingDownComment}
+                              onChange={(e) =>
+                                setPendingDownComment(e.target.value)
+                              }
+                              rows={2}
+                              placeholder="What was wrong with this answer? (optional)"
+                              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600"
+                            />
+                            <div className="flex gap-3 items-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void submitRating(
+                                    msg.interactionId!,
+                                    -1,
+                                    pendingDownComment || null,
+                                  )
+                                }
+                                className="text-xs font-medium rounded bg-gray-900 text-white px-2.5 py-1 hover:bg-gray-700 transition-colors"
+                              >
+                                Submit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void submitRating(msg.interactionId!, -1, null)
+                                }
+                                className="text-xs text-gray-500 hover:text-gray-800 transition-colors"
+                              >
+                                Skip
+                              </button>
+                            </div>
+                          </div>
+                        )}
                     </div>
                   )}
               </div>
