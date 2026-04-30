@@ -279,7 +279,8 @@ export async function getLogCsv(): Promise<string> {
 
   function csvField(value: unknown): string {
     if (value === null || value === undefined) return '""';
-    return `"${String(value).replace(/"/g, '""')}"`;
+    const str = value instanceof Date ? value.toLocaleString() : String(value);
+    return `"${str.replace(/"/g, '""')}"`;
   }
 
   const header = [
