@@ -1030,9 +1030,9 @@ export default function AdminPage() {
                         {doc.uploadDate ? formatDate(doc.uploadDate) : "—"}
                       </td>
                       <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
-                        {doc.sourceType === "url"
+                        {doc.sourceType === "url" || !doc.fileSizeDisplay || doc.fileSizeDisplay === "unknown"
                           ? "—"
-                          : (doc.fileSizeDisplay ?? "—")}
+                          : doc.fileSizeDisplay}
                       </td>
                       <td className="px-6 py-4 text-gray-500">
                         {doc.totalChunks ?? "—"}
