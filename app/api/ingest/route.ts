@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { chunkText } from "@/lib/chunk";
 import { getIndex } from "@/lib/clients";
+import { isLoggingEnabled, upsertSource } from "@/lib/db";
 import { embedText } from "@/lib/embed";
 import { extractText, SUPPORTED_MIME_TYPES } from "@/lib/extract";
 import { formatBytes, normalizeFilename } from "@/lib/format";
@@ -174,6 +175,18 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
     ],
   });
+
+  if (isLoggingEnabled()) {
+    upsertSource({
+      filename,
+      originalFilename,
+      uploadDate: new Date().toISOString(),
+      fileSizeBytes: file.size,
+      fileSizeDisplay: formatBytes(file.size),
+      mimeType,
+      totalChunks: chunks.length,
+    }).catch((err) => console.error("Source registry sync failed:", err));
+  }
 
   return json(200, { ok: true, filename, originalFilename, totalChunks: chunks.length });
 }
