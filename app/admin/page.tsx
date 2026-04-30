@@ -10,6 +10,8 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel serverless body limit headroom)
 const ADMIN_SESSION_STORAGE_KEY = "admin-session";
@@ -61,7 +63,6 @@ interface InteractionRow {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
-      year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -70,6 +71,10 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function formatLatency(ms: number): string {
+  return (ms / 1000).toFixed(1) + "s";
 }
 
 type SortColumn = "source" | "added" | "size";
@@ -699,7 +704,7 @@ export default function AdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-800"
               }`}
             >
-              Log
+              Query Log
             </button>
           </div>
         </div>
@@ -1162,7 +1167,6 @@ export default function AdminPage() {
                       <th className="px-4 py-3 font-medium">Response</th>
                       <th className="px-4 py-3 font-medium">Rating</th>
                       <th className="px-4 py-3 font-medium">Sources</th>
-                      <th className="px-4 py-3 font-medium whitespace-nowrap">Latency</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1172,7 +1176,8 @@ export default function AdminPage() {
                         className="align-top hover:bg-gray-50 transition-colors"
                       >
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {formatDate(row.created_at)}
+                          <div>{formatDate(row.created_at)}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">{formatLatency(row.latency_ms)}</div>
                         </td>
                         <td className="px-4 py-3 max-w-xs">
                           <details>
@@ -1193,9 +1198,11 @@ export default function AdminPage() {
                                 ? row.response.slice(0, 120) + "…"
                                 : row.response}
                             </summary>
-                            <p className="mt-2 text-gray-600 whitespace-pre-wrap text-xs">
-                              {row.response}
-                            </p>
+                            <div className="mt-2 text-xs text-gray-600 prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {row.response}
+                              </ReactMarkdown>
+                            </div>
                           </details>
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -1209,9 +1216,6 @@ export default function AdminPage() {
                         </td>
                         <td className="px-4 py-3 text-gray-500 max-w-xs">
                           {row.sources_display || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {row.latency_ms} ms
                         </td>
                       </tr>
                     ))}
