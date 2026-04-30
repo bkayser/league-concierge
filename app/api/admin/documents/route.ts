@@ -9,17 +9,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (authError) return authError;
 
   if (isLoggingEnabled()) {
-    // #region agent log
-    let rows;
-    try {
-      rows = await getSources();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[debug-3eaca3] getSources threw:", msg);
-      fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "api/admin/documents/route.ts:getSources", message: "getSources threw", data: { error: msg }, timestamp: Date.now(), hypothesisId: "F-G-H-I" }) }).catch(() => {});
-      return new Response(JSON.stringify({ error: "Database error: " + msg }), { status: 502, headers: { "Content-Type": "application/json" } });
-    }
-    // #endregion
+    const rows = await getSources();
     const documents = rows.map((row) => ({
       filename: row.filename,
       originalFilename: row.original_filename,

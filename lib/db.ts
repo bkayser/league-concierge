@@ -3,21 +3,6 @@ import { neon } from "@neondatabase/serverless";
 // ---- Feature flag -------------------------------------------------------
 
 export function isLoggingEnabled(): boolean {
-  // #region agent log
-  const _url = process.env.NEON_DATABASE_URL;
-  console.log("[debug-3eaca3] isLoggingEnabled", {
-    defined: _url !== undefined,
-    type: typeof _url,
-    length: _url?.length ?? 0,
-    prefix: _url?.slice(0, 12) ?? "",
-    result: Boolean(_url),
-  });
-  fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" },
-    body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:isLoggingEnabled", message: "feature flag check", data: { defined: _url !== undefined, type: typeof _url, length: _url?.length ?? 0, prefix: _url?.slice(0, 12) ?? "", result: Boolean(_url) }, timestamp: Date.now(), hypothesisId: "A-B-C-D" }),
-  }).catch(() => {});
-  // #endregion
   return Boolean(process.env.NEON_DATABASE_URL);
 }
 
@@ -111,34 +96,17 @@ export async function softDeleteSource(filename: string): Promise<void> {
 }
 
 export async function getSources(): Promise<SourceRow[]> {
-  // #region agent log
-  console.log("[debug-3eaca3] getSources entry");
-  // #endregion
   const sql = getDb();
-  let rows;
-  try {
-    rows = await sql`
-      SELECT
-        s.*,
-        COUNT(iss.id)::integer AS use_count
-      FROM sources s
-      LEFT JOIN interaction_sources iss ON iss.source_id = s.id
-      WHERE s.is_active = true
-      GROUP BY s.id
-      ORDER BY s.original_filename
-    `;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // #region agent log
-    console.error("[debug-3eaca3] getSources SQL threw:", msg);
-    fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:getSources-catch", message: "getSources SQL threw", data: { error: msg }, timestamp: Date.now(), hypothesisId: "F-G-I" }) }).catch(() => {});
-    // #endregion
-    throw err;
-  }
-  // #region agent log
-  console.log("[debug-3eaca3] getSources returned", (rows as SourceRow[]).length, "rows");
-  fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:getSources-ok", message: "getSources ok", data: { rowCount: (rows as SourceRow[]).length }, timestamp: Date.now(), hypothesisId: "empty-sources" }) }).catch(() => {});
-  // #endregion
+  const rows = await sql`
+    SELECT
+      s.*,
+      COUNT(iss.id)::integer AS use_count
+    FROM sources s
+    LEFT JOIN interaction_sources iss ON iss.source_id = s.id
+    WHERE s.is_active = true
+    GROUP BY s.id
+    ORDER BY s.original_filename
+  `;
   return rows as SourceRow[];
 }
 
@@ -164,10 +132,6 @@ export async function logInteraction(params: {
   chunksRetrieved: number;
   latencyMs: number;
 }): Promise<void> {
-  // #region agent log
-  console.log("[debug-3eaca3] logInteraction entry id=", params.id.slice(0, 8));
-  fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:logInteraction-entry", message: "logInteraction called", data: { id: params.id.slice(0, 8), sources: params.sources }, timestamp: Date.now(), hypothesisId: "M-fire-and-forget" }) }).catch(() => {});
-  // #endregion
   const sql = getDb();
   const {
     id,
@@ -180,24 +144,12 @@ export async function logInteraction(params: {
     latencyMs,
   } = params;
 
-  try {
-    await sql`
-      INSERT INTO interactions
-        (id, session_id, prompt, response, model_version, chunks_retrieved, latency_ms)
-      VALUES
-        (${id}::uuid, ${sessionId}::uuid, ${prompt}, ${response}, ${modelVersion}, ${chunksRetrieved}, ${latencyMs})
-    `;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // #region agent log
-    console.error("[debug-3eaca3] logInteraction INSERT threw:", msg);
-    fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:logInteraction-insert-catch", message: "logInteraction INSERT threw", data: { error: msg, id: id.slice(0, 8) }, timestamp: Date.now(), hypothesisId: "M-I" }) }).catch(() => {});
-    // #endregion
-    throw err;
-  }
-  // #region agent log
-  console.log("[debug-3eaca3] logInteraction INSERT succeeded id=", id.slice(0, 8));
-  // #endregion
+  await sql`
+    INSERT INTO interactions
+      (id, session_id, prompt, response, model_version, chunks_retrieved, latency_ms)
+    VALUES
+      (${id}::uuid, ${sessionId}::uuid, ${prompt}, ${response}, ${modelVersion}, ${chunksRetrieved}, ${latencyMs})
+  `;
 
   for (const originalFilename of sources) {
     const resolved = (await sql`
@@ -214,10 +166,6 @@ export async function logInteraction(params: {
       VALUES (${id}::uuid, ${resolved[0].id}::uuid)
     `;
   }
-  // #region agent log
-  console.log("[debug-3eaca3] logInteraction COMPLETE id=", id.slice(0, 8));
-  fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:logInteraction-complete", message: "logInteraction COMPLETE", data: { id: id.slice(0, 8) }, timestamp: Date.now(), hypothesisId: "M-fire-and-forget" }) }).catch(() => {});
-  // #endregion
 }
 
 export async function rateInteraction(params: {

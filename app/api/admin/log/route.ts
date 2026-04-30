@@ -48,16 +48,9 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   try {
     const interactions = await getLog({ filter });
-    // #region agent log
-    fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "api/admin/log/route.ts:getLog", message: "getLog succeeded", data: { rowCount: interactions.length }, timestamp: Date.now(), hypothesisId: "F-G" }) }).catch(() => {});
-    // #endregion
     return Response.json({ interactions });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[debug-3eaca3] getLog threw:", msg);
-    // #region agent log
-    fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" }, body: JSON.stringify({ sessionId: "3eaca3", location: "api/admin/log/route.ts:getLog-catch", message: "getLog threw", data: { error: msg }, timestamp: Date.now(), hypothesisId: "F-G-H-I" }) }).catch(() => {});
-    // #endregion
-    return json(502, { error: "Failed to load interaction log. Detail: " + msg });
+    console.error("getLog failed:", err);
+    return json(502, { error: "Failed to load interaction log." });
   }
 }
