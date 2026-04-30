@@ -4,10 +4,14 @@ import {
   ArrowClockwise,
   CaretDown,
   CheckCircle,
+  ThumbsDown,
+  ThumbsUp,
   Trash,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel serverless body limit headroom)
 const ADMIN_SESSION_STORAGE_KEY = "admin-session";
@@ -59,7 +63,6 @@ interface InteractionRow {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
-      year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -70,7 +73,11 @@ function formatDate(iso: string): string {
   }
 }
 
-type SortColumn = "source" | "added" | "size";
+function formatLatency(ms: number): string {
+  return (ms / 1000).toFixed(1) + "s";
+}
+
+type SortColumn = "source" | "added" | "chunks";
 type SortDirection = "asc" | "desc";
 
 function sourceSortLabel(doc: DocumentMeta): string {
@@ -84,19 +91,6 @@ function addedSortTime(doc: DocumentMeta): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-function compareBySize(
-  a: DocumentMeta,
-  b: DocumentMeta,
-  direction: SortDirection,
-): number {
-  const mult = direction === "asc" ? 1 : -1;
-  const aMissing = a.fileSizeBytes == null;
-  const bMissing = b.fileSizeBytes == null;
-  if (aMissing && bMissing) return 0;
-  if (aMissing) return 1;
-  if (bMissing) return -1;
-  return mult * (a.fileSizeBytes! - b.fileSizeBytes!);
-}
 
 export default function AdminPage() {
   const [password, setPassword] = useState("");
@@ -152,8 +146,8 @@ export default function AdminPage() {
           );
         case "added":
           return mult * (addedSortTime(a) - addedSortTime(b));
-        case "size":
-          return compareBySize(a, b, dir);
+        case "chunks":
+          return mult * ((a.totalChunks ?? 0) - (b.totalChunks ?? 0));
         default:
           return 0;
       }
@@ -697,7 +691,7 @@ export default function AdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-800"
               }`}
             >
-              Log
+              Query Log
             </button>
           </div>
         </div>
@@ -966,7 +960,7 @@ export default function AdminPage() {
                     <th
                       className="px-6 py-3 font-medium"
                       aria-sort={
-                        sortColumn === "size"
+                        sortColumn === "chunks"
                           ? sortDirection === "asc"
                             ? "ascending"
                             : "descending"
@@ -975,18 +969,17 @@ export default function AdminPage() {
                     >
                       <button
                         type="button"
-                        onClick={() => handleSortHeader("size")}
+                        onClick={() => handleSortHeader("chunks")}
                         className="inline-flex items-center gap-1 text-left font-medium text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 rounded"
                       >
                         Size
-                        {sortColumn === "size" && (
+                        {sortColumn === "chunks" && (
                           <span className="text-gray-400 normal-case">
                             {sortDirection === "asc" ? "↑" : "↓"}
                           </span>
                         )}
                       </button>
                     </th>
-                    <th className="px-6 py-3 font-medium">Chunks</th>
                     {loggingEnabled && (
                       <th className="px-6 py-3 font-medium">Times cited</th>
                     )}
@@ -1000,32 +993,35 @@ export default function AdminPage() {
                       className="hover:bg-gray-50 transition-colors"
                     >
                       <td className="px-6 py-4 max-w-xs">
-                        <div className="font-medium text-gray-900 truncate">
-                          {doc.sourceType === "url"
-                            ? (doc.pageTitle ?? doc.originalFilename)
-                            : doc.originalFilename}
-                        </div>
-                        {doc.sourceType === "url" && doc.url && (
+                        {doc.sourceType === "url" && doc.url ? (
                           <a
                             href={doc.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-green-700 hover:underline truncate block"
+                            title={doc.pageTitle ?? doc.originalFilename}
+                            className="font-medium text-green-700 hover:underline truncate block"
                           >
-                            {doc.url}
+                            {doc.pageTitle ?? doc.originalFilename}
                           </a>
+                        ) : (
+                          <div
+                            className="font-medium text-gray-900 truncate"
+                            title={doc.originalFilename}
+                          >
+                            {doc.originalFilename}
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
                         {doc.uploadDate ? formatDate(doc.uploadDate) : "—"}
                       </td>
                       <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
-                        {doc.sourceType === "url"
-                          ? "—"
-                          : (doc.fileSizeDisplay ?? "—")}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {doc.totalChunks ?? "—"}
+                        <div>{doc.totalChunks ?? "—"} chunks</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {doc.sourceType === "url" || !doc.fileSizeDisplay || doc.fileSizeDisplay === "unknown"
+                            ? "—"
+                            : doc.fileSizeDisplay}
+                        </div>
                       </td>
                       {loggingEnabled && (
                         <td className="px-6 py-4 text-gray-500">
@@ -1160,7 +1156,6 @@ export default function AdminPage() {
                       <th className="px-4 py-3 font-medium">Response</th>
                       <th className="px-4 py-3 font-medium">Rating</th>
                       <th className="px-4 py-3 font-medium">Sources</th>
-                      <th className="px-4 py-3 font-medium whitespace-nowrap">Latency</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1170,7 +1165,8 @@ export default function AdminPage() {
                         className="align-top hover:bg-gray-50 transition-colors"
                       >
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {formatDate(row.created_at)}
+                          <div>{formatDate(row.created_at)}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">{formatLatency(row.latency_ms)}</div>
                         </td>
                         <td className="px-4 py-3 max-w-xs">
                           <details>
@@ -1191,23 +1187,24 @@ export default function AdminPage() {
                                 ? row.response.slice(0, 120) + "…"
                                 : row.response}
                             </summary>
-                            <p className="mt-2 text-gray-600 whitespace-pre-wrap text-xs">
-                              {row.response}
-                            </p>
+                            <div className="mt-2 text-xs text-gray-600 prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {row.response}
+                              </ReactMarkdown>
+                            </div>
                           </details>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {row.rating === 1
-                            ? "👍"
-                            : row.rating === -1
-                              ? "👎"
-                              : "—"}
+                          {row.rating === 1 ? (
+                            <ThumbsUp className="inline text-green-600" weight="fill" size={16} aria-label="Helpful" />
+                          ) : row.rating === -1 ? (
+                            <ThumbsDown className="inline text-red-500" weight="fill" size={16} aria-label="Not helpful" />
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-500 max-w-xs">
                           {row.sources_display || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {row.latency_ms} ms
                         </td>
                       </tr>
                     ))}

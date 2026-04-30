@@ -145,6 +145,7 @@ export async function ingestUrl(url: string): Promise<UrlIngestResult> {
       fileSizeDisplay: formatBytes(fileSizeBytes),
       mimeType: "text/html",
       totalChunks: chunks.length,
+      url,
     }).catch((err) => console.error("Source registry sync failed:", err));
   }
 

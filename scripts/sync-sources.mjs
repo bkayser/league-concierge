@@ -59,9 +59,16 @@ for (const record of records) {
     continue;
   }
 
+  // URL headers store sourceType:"url" and url but no mimeType field.
+  // Derive mime_type from sourceType so URL sources are identifiable in the DB.
+  const mimeType = m.sourceType === "url"
+    ? "text/html"
+    : (typeof m.mimeType === "string" ? m.mimeType : "application/octet-stream");
+  const url = typeof m.url === "string" ? m.url : null;
+
   await sql`
     INSERT INTO sources
-      (filename, original_filename, upload_date, file_size_bytes, file_size_display, mime_type, total_chunks)
+      (filename, original_filename, upload_date, file_size_bytes, file_size_display, mime_type, total_chunks, url)
     VALUES
       (
         ${m.filename},
@@ -69,8 +76,9 @@ for (const record of records) {
         ${typeof m.uploadDate === "string" ? m.uploadDate : new Date().toISOString()},
         ${typeof m.fileSizeBytes === "number" ? m.fileSizeBytes : 0},
         ${typeof m.fileSizeDisplay === "string" ? m.fileSizeDisplay : "unknown"},
-        ${typeof m.mimeType === "string" ? m.mimeType : "application/octet-stream"},
-        ${typeof m.totalChunks === "number" ? m.totalChunks : 0}
+        ${mimeType},
+        ${typeof m.totalChunks === "number" ? m.totalChunks : 0},
+        ${url}
       )
     ON CONFLICT (filename) DO UPDATE SET
       original_filename = EXCLUDED.original_filename,
@@ -79,6 +87,7 @@ for (const record of records) {
       file_size_display = EXCLUDED.file_size_display,
       mime_type         = EXCLUDED.mime_type,
       total_chunks      = EXCLUDED.total_chunks,
+      url               = EXCLUDED.url,
       is_active         = true
   `;
   console.log(`  ✓ ${m.originalFilename}`);

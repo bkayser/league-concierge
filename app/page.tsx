@@ -1,5 +1,7 @@
 "use client";
 
+import { ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -130,7 +132,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <header className="shrink-0 bg-green-700 text-white px-4 py-3 flex items-center justify-between shadow-sm">
+      <header className="shrink-0 text-white px-4 py-3 flex items-center justify-between shadow-sm" style={{ backgroundColor: "#dd0018" }}>
         <div className="flex items-center gap-2">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -145,12 +147,12 @@ export default function ChatPage() {
               clipRule="evenodd"
             />
           </svg>
-          <h1 className="text-base font-semibold tracking-tight">OYSA Rules Assistant</h1>
+          <h1 className="text-base font-semibold tracking-tight">OYSA Resource Page</h1>
         </div>
         {messages.length > 0 && (
           <button
             onClick={handleClear}
-            className="text-xs font-medium text-green-100 hover:text-white transition-colors"
+            className="text-xs font-medium text-red-100 hover:text-white transition-colors"
           >
             New Chat
           </button>
@@ -161,25 +163,18 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center gap-3 pb-12">
-            <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="w-6 h-6 text-green-700"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M4.804 21.644A6.707 6.707 0 0 0 6 21.75a6.721 6.721 0 0 0 3.583-1.029c.774.182 1.584.279 2.417.279 5.322 0 9.75-3.97 9.75-9 0-5.03-4.428-9-9.75-9s-9.75 3.97-9.75 9c0 2.409 1.025 4.587 2.674 6.192.232.226.277.428.254.543a3.73 3.73 0 0 1-.814 1.686.75.75 0 0 0 .44 1.223ZM8.25 10.875a1.125 1.125 0 1 0 0 2.25 1.125 1.125 0 0 0 0-2.25ZM10.875 12a1.125 1.125 0 1 1 2.25 0 1.125 1.125 0 0 1-2.25 0Zm4.875-1.125a1.125 1.125 0 1 0 0 2.25 1.125 1.125 0 0 0 0-2.25Z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
+            <Image
+              src="/footy.png"
+              alt="Footy, the OYSA mascot"
+              width={96}
+              height={96}
+              className="w-24 h-24 object-contain drop-shadow-md"
+              priority
+            />
             <div>
-              <p className="text-gray-800 font-medium">OYSA Rules Assistant</p>
+              <p className="text-gray-800 font-medium">Ask Footy!</p>
               <p className="text-sm text-gray-500 mt-1 max-w-xs">
-                Ask me anything about Oregon Youth Soccer Association rules and regulations.
+                Ask me anything about Youth Soccer in Oregon.  I know all about the leagues and rules of different competitions, and I can tell you just about anything about OYSA!
               </p>
             </div>
           </div>
@@ -263,10 +258,14 @@ export default function ChatPage() {
                   ratingEnabled !== false && (
                     <div className="mt-1.5 max-w-[85%]">
                       {ratedMessages[msg.interactionId] === "up" && (
-                        <p className="text-xs text-gray-400">You rated this 👍</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                          You rated this <ThumbsUp size={12} weight="fill" className="text-green-600" aria-hidden="true" />
+                        </p>
                       )}
                       {ratedMessages[msg.interactionId] === "down" && (
-                        <p className="text-xs text-gray-400">You rated this 👎</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                          You rated this <ThumbsDown size={12} weight="fill" className="text-red-500" aria-hidden="true" />
+                        </p>
                       )}
                       {!ratedMessages[msg.interactionId] &&
                         pendingDownId !== msg.interactionId && (
@@ -276,11 +275,11 @@ export default function ChatPage() {
                               onClick={() =>
                                 void submitRating(msg.interactionId!, 1, null)
                               }
-                              className="text-base leading-none hover:scale-110 transition-transform"
+                              className="text-gray-400 hover:text-green-600 hover:scale-110 transition-all"
                               aria-label="Helpful"
                               title="Helpful"
                             >
-                              👍
+                              <ThumbsUp size={15} weight="regular" />
                             </button>
                             <button
                               type="button"
@@ -288,11 +287,11 @@ export default function ChatPage() {
                                 setPendingDownId(msg.interactionId!);
                                 setPendingDownComment("");
                               }}
-                              className="text-base leading-none hover:scale-110 transition-transform"
+                              className="text-gray-400 hover:text-red-500 hover:scale-110 transition-all"
                               aria-label="Not helpful"
                               title="Not helpful"
                             >
-                              👎
+                              <ThumbsDown size={15} weight="regular" />
                             </button>
                           </div>
                         )}
@@ -370,7 +369,7 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
-            placeholder="Ask about OYSA rules…"
+            placeholder="Ask about OYSA…"
             autoComplete="off"
             className="flex-1 rounded-full border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-green-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-green-600 disabled:opacity-60 transition-colors"
           />
