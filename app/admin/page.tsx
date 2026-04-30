@@ -1007,20 +1007,23 @@ export default function AdminPage() {
                       className="hover:bg-gray-50 transition-colors"
                     >
                       <td className="px-6 py-4 max-w-xs">
-                        <div className="font-medium text-gray-900 truncate">
-                          {doc.sourceType === "url"
-                            ? (doc.pageTitle ?? doc.originalFilename)
-                            : doc.originalFilename}
-                        </div>
-                        {doc.sourceType === "url" && doc.url && (
+                        {doc.sourceType === "url" && doc.url ? (
                           <a
                             href={doc.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-green-700 hover:underline truncate block"
+                            title={doc.pageTitle ?? doc.originalFilename}
+                            className="font-medium text-green-700 hover:underline truncate block"
                           >
-                            {doc.url}
+                            {doc.pageTitle ?? doc.originalFilename}
                           </a>
+                        ) : (
+                          <div
+                            className="font-medium text-gray-900 truncate"
+                            title={doc.originalFilename}
+                          >
+                            {doc.originalFilename}
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
