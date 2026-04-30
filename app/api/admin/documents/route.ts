@@ -19,6 +19,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       mimeType: row.mime_type,
       totalChunks: row.total_chunks,
       sourceType: row.mime_type === "text/html" ? "url" : "file",
+      url: row.url ?? undefined,
       useCount: row.use_count ?? 0,
     }));
     return Response.json({ documents });

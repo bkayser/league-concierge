@@ -35,6 +35,7 @@ export interface SourceRow {
   mime_type: string;
   total_chunks: number;
   is_active: boolean;
+  url?: string | null;
   use_count?: number;
 }
 
@@ -63,6 +64,7 @@ export async function upsertSource(params: {
   fileSizeDisplay: string;
   mimeType: string;
   totalChunks: number;
+  url?: string | null;
 }): Promise<void> {
   const sql = getDb();
   const {
@@ -73,12 +75,13 @@ export async function upsertSource(params: {
     fileSizeDisplay,
     mimeType,
     totalChunks,
+    url = null,
   } = params;
   await sql`
     INSERT INTO sources
-      (filename, original_filename, upload_date, file_size_bytes, file_size_display, mime_type, total_chunks)
+      (filename, original_filename, upload_date, file_size_bytes, file_size_display, mime_type, total_chunks, url)
     VALUES
-      (${filename}, ${originalFilename}, ${uploadDate}, ${fileSizeBytes}, ${fileSizeDisplay}, ${mimeType}, ${totalChunks})
+      (${filename}, ${originalFilename}, ${uploadDate}, ${fileSizeBytes}, ${fileSizeDisplay}, ${mimeType}, ${totalChunks}, ${url})
     ON CONFLICT (filename) DO UPDATE SET
       original_filename = EXCLUDED.original_filename,
       upload_date       = EXCLUDED.upload_date,
@@ -86,6 +89,7 @@ export async function upsertSource(params: {
       file_size_display = EXCLUDED.file_size_display,
       mime_type         = EXCLUDED.mime_type,
       total_chunks      = EXCLUDED.total_chunks,
+      url               = EXCLUDED.url,
       is_active         = true
   `;
 }
