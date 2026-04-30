@@ -1,6 +1,20 @@
-// One-time sync of Pinecone headers → Neon sources table.
-// Safe to re-run: existing rows are refreshed via ON CONFLICT DO UPDATE,
-// which also corrects any stub rows created by the auto-register path.
+// Re-sync the Neon sources table from the Pinecone headers namespace.
+//
+// Under normal operation this script should never be necessary. The ingest
+// and delete routes keep the two stores in sync automatically, and any source
+// cited in chat that is missing from the Neon table is auto-registered in-band
+// by logInteraction().
+//
+// When you DO need this script:
+//   - Bootstrapping a fresh Neon database against an existing Pinecone index
+//     (i.e. documents were ingested before NEON_DATABASE_URL was configured)
+//   - Recovering from a Neon database loss or replacement
+//   - Correcting stub rows that were auto-created with placeholder metadata
+//     (file_size_bytes = 0, mime_type = 'application/octet-stream')
+//
+// It is safe to re-run at any time. Existing rows are refreshed via
+// ON CONFLICT DO UPDATE and is_active is reset to true.
+//
 // Run: npm run sync-sources
 import { Pinecone } from "@pinecone-database/pinecone";
 import { neon } from "@neondatabase/serverless";
