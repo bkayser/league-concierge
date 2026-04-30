@@ -3,6 +3,21 @@ import { neon } from "@neondatabase/serverless";
 // ---- Feature flag -------------------------------------------------------
 
 export function isLoggingEnabled(): boolean {
+  // #region agent log
+  const _url = process.env.NEON_DATABASE_URL;
+  console.log("[debug-3eaca3] isLoggingEnabled", {
+    defined: _url !== undefined,
+    type: typeof _url,
+    length: _url?.length ?? 0,
+    prefix: _url?.slice(0, 12) ?? "",
+    result: Boolean(_url),
+  });
+  fetch("http://127.0.0.1:7332/ingest/be510bfa-a905-4eae-99f2-53e3706acaea", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3eaca3" },
+    body: JSON.stringify({ sessionId: "3eaca3", location: "lib/db.ts:isLoggingEnabled", message: "feature flag check", data: { defined: _url !== undefined, type: typeof _url, length: _url?.length ?? 0, prefix: _url?.slice(0, 12) ?? "", result: Boolean(_url) }, timestamp: Date.now(), hypothesisId: "A-B-C-D" }),
+  }).catch(() => {});
+  // #endregion
   return Boolean(process.env.NEON_DATABASE_URL);
 }
 
