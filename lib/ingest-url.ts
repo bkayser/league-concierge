@@ -2,9 +2,10 @@ import pLimit from "p-limit";
 
 import { chunkText } from "@/lib/chunk";
 import { getIndex } from "@/lib/clients";
+import { isLoggingEnabled, upsertSource } from "@/lib/db";
 import { embedText } from "@/lib/embed";
 import { extractFromUrl } from "@/lib/extract";
-import { normalizeUrl } from "@/lib/format";
+import { formatBytes, normalizeUrl } from "@/lib/format";
 
 const BATCH_SIZE = 100;
 const CHUNK_IDS_SIZE_LIMIT = 35_000;
@@ -133,6 +134,19 @@ export async function ingestUrl(url: string): Promise<UrlIngestResult> {
       },
     ],
   });
+
+  if (isLoggingEnabled()) {
+    const fileSizeBytes = Buffer.byteLength(text, "utf8");
+    upsertSource({
+      filename,
+      originalFilename: pageTitle,
+      uploadDate: new Date().toISOString(),
+      fileSizeBytes,
+      fileSizeDisplay: formatBytes(fileSizeBytes),
+      mimeType: "text/html",
+      totalChunks: chunks.length,
+    }).catch((err) => console.error("Source registry sync failed:", err));
+  }
 
   return { filename, url, pageTitle, totalChunks: chunks.length };
 }
