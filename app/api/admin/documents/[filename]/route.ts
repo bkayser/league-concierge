@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { getIndex } from "@/lib/clients";
+import { isLoggingEnabled, softDeleteSource } from "@/lib/db";
 
 export async function DELETE(
   request: NextRequest,
@@ -30,6 +31,12 @@ export async function DELETE(
     await getIndex().namespace("production").deleteMany({ ids: chunkIds });
   }
   await headerNs.deleteOne({ id: headerId });
+
+  if (isLoggingEnabled()) {
+    softDeleteSource(decoded).catch((err) =>
+      console.error("Source soft-delete failed:", err),
+    );
+  }
 
   return Response.json({ ok: true });
 }

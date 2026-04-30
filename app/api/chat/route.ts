@@ -1,7 +1,9 @@
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { NextRequest } from "next/server";
+import { after } from "next/server";
 
 import { anthropic, getIndex } from "@/lib/clients";
+import { isLoggingEnabled, logInteraction } from "@/lib/db";
 import { embedText } from "@/lib/embed";
 import { buildSystemPrompt } from "@/lib/prompt";
 
@@ -53,8 +55,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     return json(400, { error: "Invalid JSON body." });
   }
 
-  const { messages: rawMessages } =
-    (body as { messages?: unknown }) ?? {};
+  const { messages: rawMessages, session_id: rawSessionId } =
+    (body as { messages?: unknown; session_id?: unknown }) ?? {};
 
   if (!isValidMessages(rawMessages)) {
     return json(400, {
@@ -65,6 +67,15 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const messages: ClientMessage[] = rawMessages;
   const latestUserMessage = messages[messages.length - 1].content;
+
+  // Use the provided session_id or generate a fallback so every interaction
+  // has a valid UUID even when called from old clients that don't send it.
+  const sessionId =
+    typeof rawSessionId === "string" && rawSessionId.length > 0
+      ? rawSessionId
+      : crypto.randomUUID();
+
+  const startTime = Date.now();
 
   // Embed only the latest user message for retrieval (not the full history)
   let queryVector: number[];
@@ -91,16 +102,34 @@ export async function POST(request: NextRequest): Promise<Response> {
     })
     .join("\n\n---\n\n");
 
-  // Deduplicate source filenames using originalFilename for human-readable citations
-  const sources = [
-    ...new Set(
+  // Deduplicate by normalized filename (the unique key) so each document
+  // appears at most once, preserving both names for logging and display.
+  const sourceMeta = [
+    ...new Map(
       results.matches
-        .map((m) => m.metadata?.originalFilename)
-        .filter((v): v is string => typeof v === "string")
-    ),
+        .filter(
+          (m) =>
+            typeof m.metadata?.filename === "string" &&
+            typeof m.metadata?.originalFilename === "string",
+        )
+        .map((m) => [
+          m.metadata!.filename as string,
+          {
+            filename: m.metadata!.filename as string,
+            originalFilename: m.metadata!.originalFilename as string,
+            totalChunks:
+              typeof m.metadata?.totalChunks === "number"
+                ? (m.metadata.totalChunks as number)
+                : undefined,
+          },
+        ]),
+    ).values(),
   ];
+  // Human-readable list for the response payload and UI source chips
+  const sources = sourceMeta.map((s) => s.originalFilename);
 
   const systemPrompt = buildSystemPrompt(contextBlock);
+  const interactionId = crypto.randomUUID();
 
   let claudeResponse: Awaited<ReturnType<typeof anthropic.messages.create>>;
   try {
@@ -123,5 +152,26 @@ export async function POST(request: NextRequest): Promise<Response> {
     return json(500, { error: "Unexpected response format from Claude." });
   }
 
-  return json(200, { reply: firstBlock.text, sources });
+  const latencyMs = Date.now() - startTime;
+  const responsePayload = { reply: firstBlock.text, sources, interactionId };
+
+  if (isLoggingEnabled()) {
+    // Use after() so Vercel keeps the function context alive until the DB
+    // write completes — a bare .catch() promise is frozen when the response
+    // is sent, causing the INSERT to never execute on Vercel serverless.
+    after(
+      logInteraction({
+        id: interactionId,
+        sessionId,
+        prompt: latestUserMessage,
+        response: firstBlock.text,
+        sources: sourceMeta,
+        modelVersion: model,
+        chunksRetrieved: results.matches.length,
+        latencyMs,
+      }).catch((err) => console.error("Interaction log write failed:", err)),
+    );
+  }
+
+  return json(200, responsePayload);
 }

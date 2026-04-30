@@ -127,22 +127,17 @@ export async function logInteraction(params: {
   sessionId: string;
   prompt: string;
   response: string;
-  sources: string[]; // originalFilename strings — resolved to UUIDs here
+  // Each entry carries both the normalized filename (used as the lookup key)
+  // and the original for display, plus totalChunks so a stub source row can
+  // be auto-created for documents ingested before the sources table existed.
+  sources: Array<{ filename: string; originalFilename: string; totalChunks?: number }>;
   modelVersion: string;
   chunksRetrieved: number;
   latencyMs: number;
 }): Promise<void> {
   const sql = getDb();
-  const {
-    id,
-    sessionId,
-    prompt,
-    response,
-    sources,
-    modelVersion,
-    chunksRetrieved,
-    latencyMs,
-  } = params;
+  const { id, sessionId, prompt, response, sources, modelVersion, chunksRetrieved, latencyMs } =
+    params;
 
   await sql`
     INSERT INTO interactions
@@ -151,16 +146,33 @@ export async function logInteraction(params: {
       (${id}::uuid, ${sessionId}::uuid, ${prompt}, ${response}, ${modelVersion}, ${chunksRetrieved}, ${latencyMs})
   `;
 
-  for (const originalFilename of sources) {
-    const resolved = (await sql`
-      SELECT id FROM sources WHERE original_filename = ${originalFilename} LIMIT 1
+  for (const { filename, originalFilename, totalChunks } of sources) {
+    // Resolve by normalized filename — the unique key in the sources table.
+    let resolved = (await sql`
+      SELECT id FROM sources WHERE filename = ${filename} LIMIT 1
     `) as { id: string }[];
+
     if (resolved.length === 0) {
-      console.error(
-        `logInteraction: could not resolve source "${originalFilename}" — skipping interaction_sources row`,
-      );
+      // Document predates the sources registry. Auto-register a stub row so
+      // the citation is captured now; re-ingesting the document will fill in
+      // the correct file size and MIME type via the ON CONFLICT DO UPDATE path.
+      await sql`
+        INSERT INTO sources
+          (filename, original_filename, file_size_bytes, file_size_display, mime_type, total_chunks)
+        VALUES
+          (${filename}, ${originalFilename}, 0, 'unknown', 'application/octet-stream', ${totalChunks ?? 0})
+        ON CONFLICT (filename) DO NOTHING
+      `;
+      resolved = (await sql`
+        SELECT id FROM sources WHERE filename = ${filename} LIMIT 1
+      `) as { id: string }[];
+    }
+
+    if (resolved.length === 0) {
+      console.error(`logInteraction: could not create or find source "${originalFilename}" — skipping`);
       continue;
     }
+
     await sql`
       INSERT INTO interaction_sources (interaction_id, source_id)
       VALUES (${id}::uuid, ${resolved[0].id}::uuid)
