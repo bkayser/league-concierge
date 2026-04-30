@@ -77,7 +77,7 @@ function formatLatency(ms: number): string {
   return (ms / 1000).toFixed(1) + "s";
 }
 
-type SortColumn = "source" | "added" | "size";
+type SortColumn = "source" | "added" | "chunks";
 type SortDirection = "asc" | "desc";
 
 function sourceSortLabel(doc: DocumentMeta): string {
@@ -91,19 +91,6 @@ function addedSortTime(doc: DocumentMeta): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-function compareBySize(
-  a: DocumentMeta,
-  b: DocumentMeta,
-  direction: SortDirection,
-): number {
-  const mult = direction === "asc" ? 1 : -1;
-  const aMissing = a.fileSizeBytes == null;
-  const bMissing = b.fileSizeBytes == null;
-  if (aMissing && bMissing) return 0;
-  if (aMissing) return 1;
-  if (bMissing) return -1;
-  return mult * (a.fileSizeBytes! - b.fileSizeBytes!);
-}
 
 export default function AdminPage() {
   const [password, setPassword] = useState("");
@@ -159,8 +146,8 @@ export default function AdminPage() {
           );
         case "added":
           return mult * (addedSortTime(a) - addedSortTime(b));
-        case "size":
-          return compareBySize(a, b, dir);
+        case "chunks":
+          return mult * ((a.totalChunks ?? 0) - (b.totalChunks ?? 0));
         default:
           return 0;
       }
@@ -973,7 +960,7 @@ export default function AdminPage() {
                     <th
                       className="px-6 py-3 font-medium"
                       aria-sort={
-                        sortColumn === "size"
+                        sortColumn === "chunks"
                           ? sortDirection === "asc"
                             ? "ascending"
                             : "descending"
@@ -982,18 +969,17 @@ export default function AdminPage() {
                     >
                       <button
                         type="button"
-                        onClick={() => handleSortHeader("size")}
+                        onClick={() => handleSortHeader("chunks")}
                         className="inline-flex items-center gap-1 text-left font-medium text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 rounded"
                       >
                         Size
-                        {sortColumn === "size" && (
+                        {sortColumn === "chunks" && (
                           <span className="text-gray-400 normal-case">
                             {sortDirection === "asc" ? "↑" : "↓"}
                           </span>
                         )}
                       </button>
                     </th>
-                    <th className="px-6 py-3 font-medium">Chunks</th>
                     {loggingEnabled && (
                       <th className="px-6 py-3 font-medium">Times cited</th>
                     )}
@@ -1030,12 +1016,12 @@ export default function AdminPage() {
                         {doc.uploadDate ? formatDate(doc.uploadDate) : "—"}
                       </td>
                       <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
-                        {doc.sourceType === "url" || !doc.fileSizeDisplay || doc.fileSizeDisplay === "unknown"
-                          ? "—"
-                          : doc.fileSizeDisplay}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {doc.totalChunks ?? "—"}
+                        <div>{doc.totalChunks ?? "—"} chunks</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {doc.sourceType === "url" || !doc.fileSizeDisplay || doc.fileSizeDisplay === "unknown"
+                            ? "—"
+                            : doc.fileSizeDisplay}
+                        </div>
                       </td>
                       {loggingEnabled && (
                         <td className="px-6 py-4 text-gray-500">
