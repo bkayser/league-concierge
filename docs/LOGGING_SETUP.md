@@ -69,7 +69,8 @@ CREATE TABLE sources (
   file_size_display TEXT NOT NULL,
   mime_type         TEXT NOT NULL,
   total_chunks      INTEGER NOT NULL,
-  is_active         BOOLEAN NOT NULL DEFAULT true
+  is_active         BOOLEAN NOT NULL DEFAULT true,
+  url               TEXT        -- populated for URL-sourced documents; NULL for file uploads
 );
 
 -- Interaction log
@@ -104,6 +105,12 @@ CREATE INDEX ON interaction_sources(source_id);
 ```
 
 The migration is idempotent to the extent that re-running it against an empty database produces the same result. If you need to reset, drop the three tables first.
+
+**Upgrading an existing database** — if you already ran the original migration (without the `url` column), apply this one additional statement:
+
+```sql
+ALTER TABLE sources ADD COLUMN url TEXT;
+```
 
 ---
 
