@@ -8,10 +8,11 @@ Step-by-step guide for deploying the application to Vercel for the first time an
 
 Before starting:
 
-- All feature PRs (Phases 1–7) are merged to `main`.
+- All feature PRs are merged to `main`.
 - You have a Vercel account and the project is imported or linked (see Step 1).
-- You have the values for all six environment variables listed in Step 2.
+- You have the values for all required environment variables listed in Step 2.
 - The `oysa-docs` Pinecone index is already provisioned (confirmed). If setting up a brand-new Pinecone project, run `npm run create-index` locally first.
+- **Optional — interaction logging:** If you want to enable logging, you also need a Neon Postgres database with the schema already applied. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md) for the full setup guide.
 
 ---
 
@@ -35,7 +36,9 @@ vercel link             # follow prompts to link to an existing project
 
 ## Step 2 — Add environment variables in Vercel
 
-Add all six variables in the Vercel project dashboard under **Settings → Environment Variables**. Set each variable for **Production**, **Preview**, and **Development** environments unless noted otherwise.
+Add all variables in the Vercel project dashboard under **Settings → Environment Variables**. Set each variable for **Production**, **Preview**, and **Development** environments unless noted otherwise.
+
+### Required
 
 | Variable | Where to get the value |
 |---|---|
@@ -48,6 +51,14 @@ Add all six variables in the Vercel project dashboard under **Settings → Envir
 
 > **Note on `GENERATION_MODEL`:** Anthropic returns a hard `404` for an invalid model string. If the chat endpoint returns errors immediately after deployment, this is the most likely cause. See the Troubleshooting section below.
 
+### Optional — interaction logging
+
+| Variable | Where to get the value |
+|---|---|
+| `NEON_DATABASE_URL` | Neon project dashboard → **Connection string** (pooled). See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md). |
+
+When `NEON_DATABASE_URL` is **not** set the app runs exactly as before — no logging, no sources registry, admin documents list served by Pinecone. When it **is** set, all chat interactions are logged, the sources registry is enabled, and the admin UI gains a Log tab. There is no partial mode; it is all-or-nothing on the env var.
+
 **Alternatively, via CLI:**
 
 ```bash
@@ -57,6 +68,7 @@ vercel env add PINECONE_API_KEY
 vercel env add PINECONE_INDEX_NAME
 vercel env add ADMIN_PASSWORD
 vercel env add GENERATION_MODEL
+vercel env add NEON_DATABASE_URL   # optional — omit to disable logging
 ```
 
 ---
@@ -77,7 +89,7 @@ Vercel picks up the push and deploys automatically.
 vercel --prod
 ```
 
-Watch the build log in the Vercel dashboard. A successful build shows all seven routes in the output:
+Watch the build log in the Vercel dashboard. A successful build shows all routes in the output:
 
 ```
 Route (app)
@@ -86,8 +98,12 @@ Route (app)
 ├ ○ /admin
 ├ ƒ /api/admin/documents
 ├ ƒ /api/admin/documents/[filename]
+├ ƒ /api/admin/documents/[filename]/refresh
+├ ƒ /api/admin/log
 ├ ƒ /api/chat
-└ ƒ /api/ingest
+├ ƒ /api/ingest
+├ ƒ /api/ingest/url
+└ ƒ /api/rate
 ```
 
 ---
@@ -112,6 +128,8 @@ curl -s \
 | `401` | `ADMIN_PASSWORD` is wrong or missing in Vercel env — check the variable name and value |
 | `500` | Pinecone credentials are wrong or missing — check `PINECONE_API_KEY` and `PINECONE_INDEX_NAME` |
 
+> When `NEON_DATABASE_URL` is set, each document in the array will also include a `useCount` field. When it is not set, the field is absent.
+
 ### 4b — Chat endpoint (confirms GENERATION_MODEL is valid)
 
 ```bash
@@ -123,7 +141,7 @@ curl -s -X POST \
 
 | Response | Meaning |
 |---|---|
-| `200` + `{ "reply": "...", "sources": [] }` | ✓ Chat endpoint working, model string valid |
+| `200` + `{ "reply": "...", "sources": [...], "interactionId": "..." }` | ✓ Chat endpoint working, model string valid |
 | `404` or `500` | Almost certainly `GENERATION_MODEL` is unset or invalid — see Troubleshooting |
 
 ### 4c — CSP frame-ancestors header (confirms iframe embedding will work)
@@ -137,6 +155,22 @@ Expected output (exact spacing may vary):
 ```
 content-security-policy: frame-ancestors 'self' https://oregonyouthsoccer.org https://www.oregonyouthsoccer.org;
 ```
+
+### 4d — Logging endpoint (only if `NEON_DATABASE_URL` is set)
+
+```bash
+curl -s \
+  -H "x-admin-password: <your-ADMIN_PASSWORD>" \
+  https://<deployment>.vercel.app/api/admin/log
+```
+
+| Response | Meaning |
+|---|---|
+| `200` + `{ "interactions": [...] }` | ✓ Neon connection working, logging active |
+| `404` | `NEON_DATABASE_URL` is not set — logging is disabled (expected if you intentionally omitted it) |
+| `502` | Neon connection failed — check the connection string and that the schema migration has been run |
+
+After a successful chat (step 4b), re-run this check to confirm an interaction row was written.
 
 ---
 
@@ -185,6 +219,24 @@ Verify the correct model string at [docs.anthropic.com/en/docs/models-overview](
 ### Admin returns `500`
 
 Pinecone credentials are incorrect. Verify `PINECONE_API_KEY` is the API key for the correct Pinecone project, and `PINECONE_INDEX_NAME` is exactly `oysa-docs` (case-sensitive).
+
+### `/api/admin/log` returns `502`
+
+The Neon connection failed. Common causes:
+
+- `NEON_DATABASE_URL` is set but the connection string is incorrect or from the wrong project
+- The schema migration has not been run — see [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md)
+- The Neon project is on the free tier and was suspended due to inactivity — open the Neon console to wake it; it resumes within a few seconds
+
+### Documents list is empty after enabling `NEON_DATABASE_URL`
+
+The sources table is empty because documents were ingested before `NEON_DATABASE_URL` was configured. Run:
+
+```bash
+npm run sync-sources
+```
+
+This reads all header records from Pinecone and upserts them into the Neon `sources` table. Safe to re-run. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md) for details.
 
 ### `maxDuration` limit hit on ingest
 
