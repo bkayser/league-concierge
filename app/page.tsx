@@ -160,26 +160,45 @@ export default function ChatPage() {
       </header>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-3 pb-12">
+      <div className="flex-1 overflow-y-auto px-4 py-6 flex flex-col min-h-0">
+        <div
+          className={`flex flex-col items-center shrink-0 transition-all duration-500 ease-in-out ${
+            messages.length === 0 ? "flex-1 justify-center pb-8" : "pt-1 pb-3"
+          }`}
+        >
+          <div
+            className={`transition-all duration-500 ease-in-out ${
+              messages.length === 0
+                ? "w-[min(75vw,320px)] h-[min(93vw,396px)] max-h-[52vh]"
+                : "w-24 h-24"
+            }`}
+          >
             <Image
               src="/footy.png"
               alt="Footy, the OYSA mascot"
-              width={96}
-              height={96}
-              className="w-24 h-24 object-contain drop-shadow-md"
+              width={803}
+              height={1024}
+              unoptimized
+              className="w-full h-full object-contain"
               priority
             />
-            <div>
-              <p className="text-gray-800 font-medium">Ask Footy!</p>
-              <p className="text-sm text-gray-500 mt-1 max-w-xs">
-                Ask me anything about Youth Soccer in Oregon.  I know all about the leagues and rules of different competitions, and I can tell you just about anything about OYSA!
-              </p>
-            </div>
           </div>
-        ) : (
-          <div className="max-w-2xl mx-auto space-y-4">
+          <div
+            className={`text-center max-w-xs transition-all duration-500 ease-in-out ${
+              messages.length === 0
+                ? "mt-4 opacity-100 max-h-40"
+                : "mt-0 opacity-0 max-h-0 overflow-hidden"
+            }`}
+          >
+            <p className="text-gray-800 font-medium">Ask Footy!</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Ask me anything about Youth Soccer in Oregon.  I know all about the leagues and rules of different competitions, and I can tell you just about anything about OYSA!
+            </p>
+          </div>
+        </div>
+
+        {messages.length > 0 && (
+          <div className="max-w-2xl mx-auto space-y-4 w-full">
             {messages.map((msg, i) => (
               <div
                 key={i}
