@@ -50,7 +50,7 @@ Add all variables in the Vercel project dashboard under **Settings → Environme
 | `ADMIN_ALLOWLIST` | Comma-separated admin emails and/or domains (e.g. `pat@example.org,example.org`). See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). |
 | `RESEND_API_KEY` | [resend.com](https://resend.com/api-keys) → API Keys → sending access, restricted to the sending domain |
 | `EMAIL_FROM` | Sender for sign-in codes on a domain verified in Resend, e.g. `Ask Footy <askfooty@bravoking.net>` |
-| `GENERATION_MODEL` | Current canonical value: `claude-sonnet-4-6` — verify at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview) before setting |
+| `GENERATION_MODEL` | Current canonical value: `claude-sonnet-5-5` — verify at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview) before setting |
 
 > **Note on `GENERATION_MODEL`:** Anthropic returns a hard `404` for an invalid model string. If the chat endpoint returns errors immediately after deployment, this is the most likely cause. See the Troubleshooting section below.
 
