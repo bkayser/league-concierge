@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 const ADMIN_PASSWORD_HEADER = "x-admin-password";
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
@@ -5,6 +7,13 @@ function jsonResponse(status: number, body: Record<string, unknown>): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 export function requireAdmin(req: Request): Response | null {
@@ -16,7 +25,7 @@ export function requireAdmin(req: Request): Response | null {
   }
 
   const provided = req.headers.get(ADMIN_PASSWORD_HEADER);
-  if (provided !== expected) {
+  if (provided === null || !safeEqual(provided, expected)) {
     return jsonResponse(401, { error: "Unauthorized" });
   }
 

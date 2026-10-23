@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local-only files (never commit)
+/keys
+/kbdocs/
+/footy.png
+*~
+\#*\#
