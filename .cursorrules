@@ -1,15 +1,16 @@
-# Cursor Agent Rules — OYSA RAG Chatbot
+# Cursor Agent Rules — League Concierge (OYSA RAG Chatbot)
 
 ## Project Summary
-This is a RAG (Retrieval-Augmented Generation) chatbot for the Oregon Youth Soccer Association.
-It is a Next.js app hosted on Vercel, embedded via iframe on oregonyouthsoccer.org.
+This is a RAG (Retrieval-Augmented Generation) chatbot, built for the Oregon Youth Soccer Association (OYSA)
+and MIT-licensed so other organizations can fork it. See README "Rebranding a fork" for the files that carry OYSA branding.
+It is a Next.js app hosted on Vercel, embedded via iframe on the organization's website (oregonyouthsoccer.org for OYSA).
 The corpus is a small set of operational documents and competition rules (~50 PDFs/Word docs).
 
 ## Stack — Do Not Deviate Without Asking
 - **Framework**: Next.js with App Router
 - **Embeddings**: OpenAI `text-embedding-3-small` (1536 dimensions) — embeddings ONLY, not generation
 - **Generation**: Anthropic Claude (read from `GENERATION_MODEL` env var, current value `claude-sonnet-4-6`) — generation ONLY, not embeddings
-- **Vector DB**: Pinecone serverless, index name `oysa-docs`, dimension 1536, metric cosine
+- **Vector DB**: Pinecone serverless, index name from `PINECONE_INDEX_NAME` (`oysa-docs` for OYSA), dimension 1536, metric cosine
 - **Hosting**: Vercel serverless functions
 
 ## Shared Client Instances
@@ -22,7 +23,7 @@ Use only these env var names — do not introduce new ones without updating READ
 - `OPENAI_API_KEY` — OpenAI (embeddings only)
 - `ANTHROPIC_API_KEY` — Anthropic (generation only)
 - `PINECONE_API_KEY` — Pinecone
-- `PINECONE_INDEX_NAME` — defaults to "oysa-docs"
+- `PINECONE_INDEX_NAME` — defaults to "oysa-docs" (the OYSA index; forks should set this explicitly)
 - `ADMIN_PASSWORD` — plain password for admin UI access
 - `GENERATION_MODEL` - `claude-sonnet-4-6`
 
@@ -178,7 +179,7 @@ The admin DELETE endpoint URL carries `filename` (normalized) because it is the 
 The `window.confirm` dialog and the chat source chips show `originalFilename` for readability.
 
 ## CORS / Embedding Strategy
-- The app is embedded via iframe on oregonyouthsoccer.org — do NOT add CORS headers to API routes
+- The app is embedded via iframe on the parent site (allowed origins are listed in `next.config.ts` `frame-ancestors`) — do NOT add CORS headers to API routes
 - All fetch calls from the chat UI are same-origin (Vercel → Vercel)
 - Do not implement script-tag embed patterns — iframe only
 
