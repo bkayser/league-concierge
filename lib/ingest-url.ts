@@ -15,6 +15,8 @@ export interface UrlIngestResult {
   url: string;
   pageTitle: string;
   totalChunks: number;
+  // True when an existing source for this URL was replaced.
+  replaced: boolean;
 }
 
 export class UrlIngestError extends Error {
@@ -27,7 +29,10 @@ export class UrlIngestError extends Error {
   }
 }
 
-export async function ingestUrl(url: string): Promise<UrlIngestResult> {
+export async function ingestUrl(
+  url: string,
+  uploadedBy: string,
+): Promise<UrlIngestResult> {
   let text: string;
   let pageTitle: string;
   try {
@@ -129,7 +134,7 @@ export async function ingestUrl(url: string): Promise<UrlIngestResult> {
           uploadDate: new Date().toISOString(),
           totalChunks: chunks.length,
           chunkIds,
-          uploadedBy: "admin",
+          uploadedBy,
         },
       },
     ],
@@ -149,5 +154,11 @@ export async function ingestUrl(url: string): Promise<UrlIngestResult> {
     }).catch((err) => console.error("Source registry sync failed:", err));
   }
 
-  return { filename, url, pageTitle, totalChunks: chunks.length };
+  return {
+    filename,
+    url,
+    pageTitle,
+    totalChunks: chunks.length,
+    replaced: Boolean(existingHeader),
+  };
 }

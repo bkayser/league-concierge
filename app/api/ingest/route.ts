@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 import type { NextRequest } from "next/server";
 
+import { auditSourceChange } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { chunkText } from "@/lib/chunk";
 import { getIndex } from "@/lib/clients";
@@ -27,8 +28,8 @@ function json(status: number, body: Record<string, unknown>): Response {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const authError = requireAdmin(request);
-  if (authError) return authError;
+  const auth = await requireAdmin(request);
+  if (auth.error) return auth.error;
 
   try {
     await ensureIndexReady();
@@ -170,10 +171,16 @@ export async function POST(request: NextRequest): Promise<Response> {
           mimeType,
           totalChunks: chunks.length,
           chunkIds,
-          uploadedBy: "admin",
+          uploadedBy: auth.admin.email,
         },
       },
     ],
+  });
+
+  await auditSourceChange(auth.admin, {
+    action: existingHeader ? "updated" : "added",
+    filename,
+    sourceName: originalFilename,
   });
 
   if (isLoggingEnabled()) {

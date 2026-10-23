@@ -46,18 +46,17 @@ Add all variables in the Vercel project dashboard under **Settings → Environme
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | `PINECONE_API_KEY` | [app.pinecone.io](https://app.pinecone.io) → project → API Keys |
 | `PINECONE_INDEX_NAME` | Your Pinecone index name (`oysa-docs` for the OYSA deployment) |
-| `ADMIN_PASSWORD` | Choose a strong password for the admin UI |
+| `NEON_DATABASE_URL` | Neon project dashboard → **Connection string** (pooled). Required for admin sign-in and the audit log; also enables interaction logging. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md). |
+| `ADMIN_ALLOWLIST` | Comma-separated admin emails and/or domains (e.g. `pat@example.org,example.org`). See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). |
+| `RESEND_API_KEY` | Set automatically by `vercel integration add resend/resend-email` |
+| `EMAIL_FROM` | Sender for sign-in codes, on a domain verified in Resend |
 | `GENERATION_MODEL` | Current canonical value: `claude-sonnet-4-6` — verify at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview) before setting |
 
 > **Note on `GENERATION_MODEL`:** Anthropic returns a hard `404` for an invalid model string. If the chat endpoint returns errors immediately after deployment, this is the most likely cause. See the Troubleshooting section below.
 
-### Optional — interaction logging
+### Neon and interaction logging
 
-| Variable | Where to get the value |
-|---|---|
-| `NEON_DATABASE_URL` | Neon project dashboard → **Connection string** (pooled). See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md). |
-
-When `NEON_DATABASE_URL` is **not** set the app runs exactly as before — no logging, no sources registry, admin documents list served by Pinecone. When it **is** set, all chat interactions are logged, the sources registry is enabled, and the admin UI gains a Log tab. There is no partial mode; it is all-or-nothing on the env var.
+Without `NEON_DATABASE_URL` the chat still works, but nobody can sign in to the admin UI. With it set, all chat interactions are logged, the sources registry is enabled, and the admin UI gains a Log tab. Run `npm run migrate-admin-auth` once to create the admin and audit tables.
 
 **Alternatively, via CLI:**
 
@@ -66,9 +65,11 @@ vercel env add OPENAI_API_KEY
 vercel env add ANTHROPIC_API_KEY
 vercel env add PINECONE_API_KEY
 vercel env add PINECONE_INDEX_NAME
-vercel env add ADMIN_PASSWORD
 vercel env add GENERATION_MODEL
-vercel env add NEON_DATABASE_URL   # optional — omit to disable logging
+vercel env add NEON_DATABASE_URL
+vercel env add ADMIN_ALLOWLIST
+vercel env add EMAIL_FROM
+vercel integration add resend/resend-email   # provisions RESEND_API_KEY
 ```
 
 ---
@@ -114,21 +115,15 @@ Run these checks **in order** — each one isolates a different failure surface.
 
 Replace `<deployment>.vercel.app` with your actual Vercel deployment URL throughout.
 
-### 4a — Admin endpoint (confirms ADMIN_PASSWORD + Pinecone credentials)
+### 4a — Admin sign-in (confirms Neon, Resend, allowlist + Pinecone credentials)
 
-```bash
-curl -s \
-  -H "x-admin-password: <your-ADMIN_PASSWORD>" \
-  https://<deployment>.vercel.app/api/admin/documents
-```
+Open `https://<deployment>.vercel.app/admin`, enter an allowlisted email, and sign in with the emailed code. On first sign-in you'll be asked for your name and phone. The Documents tab should then load.
 
-| Response | Meaning |
+| Symptom | Meaning |
 |---|---|
-| `200` + `{ "documents": [] }` or a populated array | ✓ Admin endpoint working, Pinecone credentials valid |
-| `401` | `ADMIN_PASSWORD` is wrong or missing in Vercel env — check the variable name and value |
-| `500` | Pinecone credentials are wrong or missing — check `PINECONE_API_KEY` and `PINECONE_INDEX_NAME` |
-
-> When `NEON_DATABASE_URL` is set, each document in the array will also include a `useCount` field. When it is not set, the field is absent.
+| No email arrives | Address isn't in `ADMIN_ALLOWLIST`, or `EMAIL_FROM` isn't on a Resend-verified domain (check the Resend dashboard logs) |
+| "Could not send the sign-in code" | `RESEND_API_KEY`/`EMAIL_FROM` missing, or the admin tables don't exist — run `npm run migrate-admin-auth` |
+| Signed in, but documents fail to load | Pinecone credentials are wrong or missing — check `PINECONE_API_KEY` and `PINECONE_INDEX_NAME` |
 
 ### 4b — Chat endpoint (confirms GENERATION_MODEL is valid)
 
@@ -156,18 +151,9 @@ Expected output (exact spacing may vary; the origins come from `next.config.ts` 
 content-security-policy: frame-ancestors 'self' https://oregonyouthsoccer.org https://www.oregonyouthsoccer.org;
 ```
 
-### 4d — Logging endpoint (only if `NEON_DATABASE_URL` is set)
+### 4d — Logging and audit
 
-```bash
-curl -s \
-  -H "x-admin-password: <your-ADMIN_PASSWORD>" \
-  https://<deployment>.vercel.app/api/admin/log
-```
-
-| Response | Meaning |
-|---|---|
-| `200` + `{ "interactions": [...] }` | ✓ Neon connection working, logging active |
-| `404` | `NEON_DATABASE_URL` is not set — logging is disabled (expected if you intentionally omitted it) |
+While signed in to `/admin`, the **Query Log** and **Audit** tabs should load. Upload or delete a test document and confirm it shows up on the Audit tab with your name.
 | `502` | Neon connection failed — check the connection string and that the schema migration has been run |
 
 After a successful chat (step 4b), re-run this check to confirm an interaction row was written.
@@ -214,7 +200,7 @@ Verify the correct model string at [docs.anthropic.com/en/docs/models-overview](
 
 ### Admin returns `401`
 
-`ADMIN_PASSWORD` in the Vercel environment does not match what you typed in the admin UI. Update the value in **Settings → Environment Variables** and redeploy.
+The session is missing or expired (7 days), or the admin's email is no longer covered by `ADMIN_ALLOWLIST`. Sign in again, or fix the allowlist and redeploy.
 
 ### Admin returns `500`
 
