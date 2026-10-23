@@ -13,8 +13,8 @@ function json(status: number, body: Record<string, unknown>): Response {
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const authError = requireAdmin(request);
-  if (authError) return authError;
+  const auth = await requireAdmin(request);
+  if (auth.error) return auth.error;
 
   // 404 is the client-side feature flag: logging disabled → hide Log tab
   if (!isLoggingEnabled()) {

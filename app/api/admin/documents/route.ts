@@ -5,8 +5,8 @@ import { getIndex } from "@/lib/clients";
 import { getSources, isLoggingEnabled } from "@/lib/db";
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const authError = requireAdmin(request);
-  if (authError) return authError;
+  const auth = await requireAdmin(request);
+  if (auth.error) return auth.error;
 
   if (isLoggingEnabled()) {
     try {

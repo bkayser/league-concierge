@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { auditSourceChange } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { getIndex } from "@/lib/clients";
 import { isLoggingEnabled, softDeleteSource } from "@/lib/db";
@@ -8,8 +9,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ filename: string }> },
 ): Promise<Response> {
-  const authError = requireAdmin(request);
-  if (authError) return authError;
+  const auth = await requireAdmin(request);
+  if (auth.error) return auth.error;
 
   const { filename } = await params;
   const decoded = decodeURIComponent(filename);
@@ -31,6 +32,14 @@ export async function DELETE(
     await getIndex().namespace("production").deleteMany({ ids: chunkIds });
   }
   await headerNs.deleteOne({ id: headerId });
+
+  const metadata = header.metadata ?? {};
+  await auditSourceChange(auth.admin, {
+    action: "removed",
+    filename: decoded,
+    sourceName: String(metadata.pageTitle ?? metadata.originalFilename ?? decoded),
+    url: typeof metadata.url === "string" ? metadata.url : null,
+  });
 
   if (isLoggingEnabled()) {
     softDeleteSource(decoded).catch((err) =>

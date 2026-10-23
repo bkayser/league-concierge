@@ -13,9 +13,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import AdminLogin, { type AdminUser } from "./AdminLogin";
+
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel serverless body limit headroom)
-const ADMIN_SESSION_STORAGE_KEY = "admin-session";
-const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_URLS_PER_BATCH = 10;
 
 interface BatchUrlStatus {
@@ -26,10 +26,22 @@ interface BatchUrlStatus {
   error?: string;
 }
 
-interface AdminSessionState {
-  password: string;
-  authenticatedAt: number;
+interface AuditEntry {
+  id: string;
+  action: "added" | "updated" | "removed";
+  filename: string;
+  source_name: string;
+  url: string | null;
+  admin_email: string;
+  admin_name: string;
+  created_at: string;
 }
+
+const AUDIT_ACTION_STYLES: Record<AuditEntry["action"], string> = {
+  added: "bg-green-50 text-green-700",
+  updated: "bg-blue-50 text-blue-700",
+  removed: "bg-red-50 text-red-700",
+};
 
 interface DocumentMeta {
   filename: string;
@@ -93,12 +105,11 @@ function addedSortTime(doc: DocumentMeta): number {
 
 
 export default function AdminPage() {
-  const [password, setPassword] = useState("");
-  const [authed, setAuthed] = useState(false);
+  const [user, setUser] = useState<AdminUser | null>(null);
+  // Signed in, but first name / last name / phone not yet collected.
+  const [pendingProfileUser, setPendingProfileUser] = useState<AdminUser | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -125,10 +136,16 @@ export default function AdminPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const [loggingEnabled, setLoggingEnabled] = useState(false);
-  const [activeTab, setActiveTab] = useState<"documents" | "log">("documents");
+  const [activeTab, setActiveTab] = useState<"documents" | "log" | "audit">(
+    "documents",
+  );
   const [logFilter, setLogFilter] = useState<"all" | "rated" | "unrated">("all");
   const [logRows, setLogRows] = useState<InteractionRow[]>([]);
   const [logLoading, setLogLoading] = useState(false);
+
+  const [auditRows, setAuditRows] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const sortedDocuments = useMemo(() => {
     const list = [...documents];
@@ -164,10 +181,10 @@ export default function AdminPage() {
     }
   }
 
-  const fetchDocuments = useCallback(async (pwd: string) => {
-    const res = await fetch("/api/admin/documents", {
-      headers: { "x-admin-password": pwd },
-    });
+  // Admin API calls authenticate with the httpOnly session cookie, which
+  // same-origin fetch sends automatically.
+  const fetchDocuments = useCallback(async () => {
+    const res = await fetch("/api/admin/documents");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as { documents: DocumentMeta[] };
     setDocuments(data.documents ?? []);
@@ -175,10 +192,8 @@ export default function AdminPage() {
 
   // Probe /api/admin/log once on login to detect whether logging is enabled.
   // Reuses the same response to load initial log rows — avoids a second request.
-  const probeAndLoadLog = useCallback(async (pwd: string) => {
-    const res = await fetch("/api/admin/log?filter=all", {
-      headers: { "x-admin-password": pwd },
-    });
+  const probeAndLoadLog = useCallback(async () => {
+    const res = await fetch("/api/admin/log?filter=all");
     setLoggingEnabled(res.ok);
     if (res.ok) {
       const data = (await res.json()) as { interactions: InteractionRow[] };
@@ -186,57 +201,35 @@ export default function AdminPage() {
     }
   }, []);
 
-  const clearStoredSession = useCallback(() => {
-    localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
-  }, []);
+  const handleAuthenticated = useCallback(
+    (authedUser: AdminUser) => {
+      setPendingProfileUser(null);
+      setUser(authedUser);
+      void fetchDocuments().catch(() => {});
+      void probeAndLoadLog();
+    },
+    [fetchDocuments, probeAndLoadLog],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     async function restoreSession() {
-      const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-      if (!raw) {
-        if (!cancelled) setRestoringSession(false);
-        return;
-      }
-
-      let parsed: AdminSessionState | null = null;
       try {
-        parsed = JSON.parse(raw) as AdminSessionState;
-      } catch {
-        clearStoredSession();
-        if (!cancelled) setRestoringSession(false);
-        return;
-      }
-
-      if (
-        !parsed?.password ||
-        typeof parsed.password !== "string" ||
-        typeof parsed.authenticatedAt !== "number"
-      ) {
-        clearStoredSession();
-        if (!cancelled) setRestoringSession(false);
-        return;
-      }
-
-      if (Date.now() - parsed.authenticatedAt > ADMIN_SESSION_TTL_MS) {
-        clearStoredSession();
-        if (!cancelled) setRestoringSession(false);
-        return;
-      }
-
-      if (cancelled) return;
-      setPassword(parsed.password);
-
-      try {
-        await fetchDocuments(parsed.password);
-        if (!cancelled) {
-          setAuthed(true);
-          void probeAndLoadLog(parsed.password);
+        const res = await fetch("/api/admin/me");
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          user: AdminUser;
+          profileComplete: boolean;
+        };
+        if (cancelled) return;
+        if (data.profileComplete) {
+          handleAuthenticated(data.user);
+        } else {
+          setPendingProfileUser(data.user);
         }
       } catch {
-        clearStoredSession();
-        if (!cancelled) setAuthed(false);
+        // fall through to the sign-in form
       } finally {
         if (!cancelled) setRestoringSession(false);
       }
@@ -247,31 +240,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [clearStoredSession, fetchDocuments, probeAndLoadLog]);
-
-  async function handleUnlock(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await fetchDocuments(password);
-      setAuthed(true);
-      void probeAndLoadLog(password);
-      const session: AdminSessionState = {
-        password,
-        authenticatedAt: Date.now(),
-      };
-      localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(session));
-    } catch (err) {
-      const msg =
-        err instanceof Error && err.message.includes("401")
-          ? "Incorrect password. Please try again."
-          : "Could not connect to the server. Please try again.";
-      setAuthError(msg);
-    } finally {
-      setAuthLoading(false);
-    }
-  }
+  }, [handleAuthenticated]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFileError(null);
@@ -297,7 +266,6 @@ export default function AdminPage() {
       formData.append("file", selectedFile);
       const res = await fetch("/api/ingest", {
         method: "POST",
-        headers: { "x-admin-password": password },
         body: formData,
       });
       const data = (await res.json()) as {
@@ -315,7 +283,7 @@ export default function AdminPage() {
       );
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      await fetchDocuments(password);
+      await fetchDocuments();
     } catch {
       setUploadError(
         "Upload failed. Please check your connection and try again.",
@@ -355,10 +323,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/ingest/url", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-password": password,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -459,7 +424,7 @@ export default function AdminPage() {
           ]);
         }
       }
-      await fetchDocuments(password);
+      await fetchDocuments();
       const allOk = initialStatuses.length > 0;
       if (allOk) {
         // Clear the textarea only if every URL succeeded so failed ones can be edited and retried
@@ -491,7 +456,6 @@ export default function AdminPage() {
         `/api/admin/documents/${encodeURIComponent(doc.filename)}`,
         {
           method: "DELETE",
-          headers: { "x-admin-password": password },
         },
       );
       if (!res.ok) {
@@ -501,7 +465,7 @@ export default function AdminPage() {
         setDeleteError(data.error ?? `Delete failed (HTTP ${res.status}).`);
         return;
       }
-      await fetchDocuments(password);
+      await fetchDocuments();
     } catch {
       setDeleteError(
         "Delete failed. Please check your connection and try again.",
@@ -519,7 +483,6 @@ export default function AdminPage() {
         `/api/admin/documents/${encodeURIComponent(doc.filename)}/refresh`,
         {
           method: "POST",
-          headers: { "x-admin-password": password },
         },
       );
       if (!res.ok) {
@@ -529,7 +492,7 @@ export default function AdminPage() {
         setRefreshError(data.error ?? `Refresh failed (HTTP ${res.status}).`);
         return;
       }
-      await fetchDocuments(password);
+      await fetchDocuments();
     } catch {
       setRefreshError(
         "Refresh failed. Please check your connection and try again.",
@@ -539,12 +502,13 @@ export default function AdminPage() {
     }
   }
 
-  function handleLogout() {
-    clearStoredSession();
-    setPassword("");
-    setAuthed(false);
+  async function handleLogout() {
+    await fetch("/api/admin/auth/logout", { method: "POST" }).catch(() => {});
+    setUser(null);
+    setPendingProfileUser(null);
     setDocuments([]);
-    setAuthError(null);
+    setAuditRows([]);
+    setAuditError(null);
     setUploadMessage(null);
     setUploadError(null);
     setDeleteError(null);
@@ -566,9 +530,7 @@ export default function AdminPage() {
     setLogFilter(filter);
     setLogLoading(true);
     try {
-      const res = await fetch(`/api/admin/log?filter=${filter}`, {
-        headers: { "x-admin-password": password },
-      });
+      const res = await fetch(`/api/admin/log?filter=${filter}`);
       if (res.ok) {
         const data = (await res.json()) as { interactions: InteractionRow[] };
         setLogRows(data.interactions ?? []);
@@ -581,9 +543,7 @@ export default function AdminPage() {
   }
 
   async function downloadCsv() {
-    const res = await fetch("/api/admin/log?download=true", {
-      headers: { "x-admin-password": password },
-    });
+    const res = await fetch("/api/admin/log?download=true");
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -593,58 +553,49 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (!authed) {
+  async function loadAudit() {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const res = await fetch("/api/admin/audit");
+      if (!res.ok) {
+        setAuditError(`Failed to load audit log (HTTP ${res.status}).`);
+        return;
+      }
+      const data = (await res.json()) as { entries: AuditEntry[] };
+      setAuditRows(data.entries ?? []);
+    } catch {
+      setAuditError("Failed to load audit log. Please check your connection.");
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
+  async function downloadAuditCsv() {
+    const res = await fetch("/api/admin/audit?download=true");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `oysa-source-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (restoringSession) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 w-full max-w-sm p-8">
-          <div className="mb-6 text-center">
-            <h1 className="text-2xl font-semibold text-gray-900">
-              OYSA Document Admin
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Enter your admin password to continue.
-            </p>
-          </div>
-
-          <form onSubmit={handleUnlock} className="space-y-4">
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setAuthError(null);
-                }}
-                autoComplete="current-password"
-                required
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600"
-                placeholder="Enter password"
-              />
-            </div>
-
-            {authError && <p className="text-sm text-red-600">{authError}</p>}
-
-            <button
-              type="submit"
-              disabled={restoringSession || authLoading || !password}
-              className="w-full rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {restoringSession
-                ? "Restoring session…"
-                : authLoading
-                  ? "Verifying…"
-                  : "Unlock"}
-            </button>
-          </form>
-        </div>
+        <p className="text-sm text-gray-400">Restoring session…</p>
       </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <AdminLogin
+        pendingProfileUser={pendingProfileUser}
+        onAuthenticated={handleAuthenticated}
+      />
     );
   }
 
@@ -655,29 +606,34 @@ export default function AdminPage() {
         <h1 className="text-lg font-semibold text-gray-900">
           OYSA Document Admin
         </h1>
-        <button
-          onClick={handleLogout}
-          className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
-        >
-          Lock
-        </button>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-500" title={user.email}>
+            {user.first_name} {user.last_name}
+          </span>
+          <button
+            onClick={() => void handleLogout()}
+            className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
-      {/* Tab strip — only shown when interaction logging is active */}
-      {loggingEnabled && (
-        <div className="bg-white border-b border-gray-200">
-          <div className="max-w-4xl mx-auto px-6 flex">
-            <button
-              type="button"
-              onClick={() => setActiveTab("documents")}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "documents"
-                  ? "border-green-700 text-green-700"
-                  : "border-transparent text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              Documents
-            </button>
+      {/* Tab strip — Query Log only when interaction logging is active */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 flex">
+          <button
+            type="button"
+            onClick={() => setActiveTab("documents")}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "documents"
+                ? "border-green-700 text-green-700"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Documents
+          </button>
+          {loggingEnabled && (
             <button
               type="button"
               onClick={() => {
@@ -693,9 +649,23 @@ export default function AdminPage() {
             >
               Query Log
             </button>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("audit");
+              if (!auditLoading) void loadAudit();
+            }}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "audit"
+                ? "border-green-700 text-green-700"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Audit
+          </button>
         </div>
-      )}
+      </div>
 
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
 
@@ -1205,6 +1175,90 @@ export default function AdminPage() {
                         </td>
                         <td className="px-4 py-3 text-gray-500 max-w-xs">
                           {row.sources_display || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── Audit tab ───────────────────────────────────────────────────── */}
+        {activeTab === "audit" && (
+          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-gray-900">
+                Source Audit Log
+              </h2>
+              <button
+                type="button"
+                onClick={() => void downloadAuditCsv()}
+                className="text-sm font-medium text-green-700 hover:text-green-900 transition-colors"
+              >
+                Download all (CSV)
+              </button>
+            </div>
+
+            {auditError && (
+              <div className="px-6 py-3 bg-red-50 border-b border-red-100">
+                <p className="text-sm text-red-600">{auditError}</p>
+              </div>
+            )}
+
+            {auditLoading ? (
+              <div className="px-6 py-12 text-center">
+                <p className="text-sm text-gray-400">Loading…</p>
+              </div>
+            ) : auditRows.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <p className="text-sm text-gray-400">No source changes recorded yet.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                    <tr>
+                      <th className="px-4 py-3 font-medium whitespace-nowrap">Time</th>
+                      <th className="px-4 py-3 font-medium">Action</th>
+                      <th className="px-4 py-3 font-medium">Source</th>
+                      <th className="px-4 py-3 font-medium">By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {auditRows.map((row) => (
+                      <tr key={row.id} className="align-top hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                          {formatDate(row.created_at)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${AUDIT_ACTION_STYLES[row.action]}`}
+                          >
+                            {row.action}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 max-w-xs">
+                          {row.url ? (
+                            <a
+                              href={row.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={row.url}
+                              className="text-green-700 hover:underline truncate block"
+                            >
+                              {row.source_name}
+                            </a>
+                          ) : (
+                            <div className="text-gray-900 truncate" title={row.filename}>
+                              {row.source_name}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">
+                          <div>{row.admin_name}</div>
+                          <div className="text-xs text-gray-400">{row.admin_email}</div>
                         </td>
                       </tr>
                     ))}

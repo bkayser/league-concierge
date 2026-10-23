@@ -124,6 +124,79 @@ export async function getSourceByFilename(
   return rows[0] ?? null;
 }
 
+// ---- Source audit -------------------------------------------------------
+
+export type SourceAuditAction = "added" | "updated" | "removed";
+
+export interface SourceAuditRow {
+  id: string;
+  action: SourceAuditAction;
+  filename: string;
+  source_name: string;
+  url: string | null;
+  admin_email: string;
+  admin_name: string;
+  created_at: string;
+}
+
+// Admin name and email are copied onto the row rather than joined at read
+// time so the record reflects who acted, even if the profile later changes.
+export async function recordSourceAudit(params: {
+  action: SourceAuditAction;
+  filename: string;
+  sourceName: string;
+  url?: string | null;
+  admin: { id: string; email: string; name: string };
+}): Promise<void> {
+  const sql = getDb();
+  const { action, filename, sourceName, url = null, admin } = params;
+  await sql`
+    INSERT INTO source_audit
+      (action, filename, source_name, url, admin_user_id, admin_email, admin_name)
+    VALUES
+      (${action}, ${filename}, ${sourceName}, ${url}, ${admin.id}::uuid, ${admin.email}, ${admin.name})
+  `;
+}
+
+export async function getSourceAudit(): Promise<SourceAuditRow[]> {
+  const sql = getDb();
+  const rows = await sql`
+    SELECT id, action, filename, source_name, url, admin_email, admin_name, created_at
+    FROM source_audit
+    ORDER BY created_at DESC
+    LIMIT 200
+  `;
+  return rows as SourceAuditRow[];
+}
+
+export async function getSourceAuditCsv(): Promise<string> {
+  const sql = getDb();
+  const rows = (await sql`
+    SELECT id, action, filename, source_name, url, admin_email, admin_name, created_at
+    FROM source_audit
+    ORDER BY created_at DESC
+  `) as SourceAuditRow[];
+
+  const columns: (keyof SourceAuditRow)[] = [
+    "created_at",
+    "action",
+    "source_name",
+    "filename",
+    "url",
+    "admin_name",
+    "admin_email",
+    "id",
+  ];
+  const lines = rows.map((row) => columns.map((c) => csvField(row[c])).join(","));
+  return [columns.join(","), ...lines].join("\n");
+}
+
+function csvField(value: unknown): string {
+  if (value === null || value === undefined) return '""';
+  const str = value instanceof Date ? value.toISOString() : String(value);
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
 // ---- Interactions -------------------------------------------------------
 
 export async function logInteraction(params: {

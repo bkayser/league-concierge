@@ -24,9 +24,9 @@ If you deploy this, post a privacy notice on the page that embeds the widget. Th
 
 ### Security notes for deployers
 
-- The admin UI and ingest endpoints are protected by a single shared password sent in the `x-admin-password` header (`lib/auth.ts`). There are no user accounts. Use a long random password and serve only over HTTPS.
+- The admin UI and ingest endpoints require sign-in with an emailed one-time code. Only addresses or domains listed in `ADMIN_ALLOWLIST` can sign in. Source changes are audited per admin. See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). Serve only over HTTPS.
 - `/api/chat` and `/api/rate` are unauthenticated by design, and each chat call spends OpenAI and Anthropic credit. Put a rate limit in front of them (Vercel Firewall rules work) before linking from a public page.
-- `/api/ingest/url` fetches an arbitrary URL supplied by the admin. It is admin-only, but treat the admin password accordingly.
+- `/api/ingest/url` fetches an arbitrary URL supplied by the admin. It is admin-only, but keep `ADMIN_ALLOWLIST` tight accordingly.
 
 ## Architecture Overview
 
@@ -81,7 +81,9 @@ your-org.example  (oregonyouthsoccer.org for OYSA)
 │               └── [filename]/
 │                   └── route.ts          # DELETE: remove document + chunks
 ├── lib/
-│   ├── auth.ts               # requireAdmin() — x-admin-password header check
+│   ├── audit.ts              # auditSourceChange() — source add/update/remove log
+│   ├── auth.ts               # requireAdmin(), email OTP, sessions, allowlist
+│   ├── email.ts              # sendLoginCode() via Resend
 │   ├── chunk.ts              # chunkText() — token-based text chunking
 │   ├── clients.ts            # Singleton instances: OpenAI, Anthropic, Pinecone
 │   ├── embed.ts              # embedText(text) → float[1536] via OpenAI
@@ -105,8 +107,11 @@ OPENAI_API_KEY=sk-proj-...         # OpenAI — embeddings only
 ANTHROPIC_API_KEY=sk-ant-...       # Anthropic — generation only
 PINECONE_API_KEY=...               # Pinecone vector DB
 PINECONE_INDEX_NAME=oysa-docs      # Pinecone index name (oysa-docs is OYSA's; use your own)
-ADMIN_PASSWORD=...                 # Simple password for admin UI access
 GENERATION_MODEL=claude-sonnet-4-6 # Anthropic model string — verify at https://docs.anthropic.com
+NEON_DATABASE_URL=postgresql://... # Required for admin; enables interaction logging
+ADMIN_ALLOWLIST=pat@example.org,example.org  # Admin emails and/or whole domains
+RESEND_API_KEY=re_...              # Resend sending key for the verified domain
+EMAIL_FROM="Ask Footy <askfooty@bravoking.net>"  # Sender on a Resend-verified domain
 ```
 
 ## RAG Pipeline
@@ -174,7 +179,7 @@ This runs:
 
 Run once after any significant change to the ingest or chat pipeline:
 
-1. `npm run dev` → open `http://localhost:3000/admin`, enter `ADMIN_PASSWORD`, upload a small known PDF
+1. `npm run dev` → open `http://localhost:3000/admin`, sign in with an allowlisted email (without Resend configured, the code is printed in the dev server log), upload a small known PDF
 2. Open `http://localhost:3000`, ask a question whose answer is in that PDF — confirm a reply with the document cited as a source chip
 3. Delete the document from `/admin`, ask the same question — confirm a graceful "I don't have information about that" response
 4. *(Fresh Pinecone project only — OYSA's `oysa-docs` index is already provisioned):* `npm run create-index`

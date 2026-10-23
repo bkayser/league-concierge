@@ -178,19 +178,13 @@ The **Log** tab appears next to the Documents tab once logging is active. After 
 
 ### API-level check
 
-```bash
-curl -s \
-  -H "x-admin-password: <your-ADMIN_PASSWORD>" \
-  https://<deployment>.vercel.app/api/admin/log
-```
-
-A `200` response with an `interactions` array confirms the Neon connection is working. A `404` means `NEON_DATABASE_URL` is not set. A `502` means the connection string is wrong or the schema migration has not been applied.
+Admin routes now need a session cookie (see [ADMIN_AUTH.md](ADMIN_AUTH.md)). While signed in, open `https://<deployment>.vercel.app/api/admin/log` in the same browser. A `200` response with an `interactions` array confirms the Neon connection is working. A `502` means the connection string is wrong or the schema migration has not been applied.
 
 ---
 
 ## Disabling logging
 
-Remove `NEON_DATABASE_URL` from Vercel environment variables and redeploy. The app reverts to Pinecone-only mode automatically — no code changes required. The Log tab disappears, the Documents list falls back to Pinecone, and no new interactions are recorded. Existing data in Neon is unaffected.
+Logging can't be disabled on its own anymore. Admin sign-in and the audit log also live in Neon, so removing `NEON_DATABASE_URL` turns off logging **and** locks everyone out of the admin UI. Chat keeps working. Existing data in Neon is unaffected.
 
 To re-enable, add the variable back and redeploy.
 

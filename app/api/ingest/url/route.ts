@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { auditSourceChange } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { ingestUrl, UrlIngestError } from "@/lib/ingest-url";
 import {
@@ -18,8 +19,8 @@ function json(status: number, body: Record<string, unknown>): Response {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const authError = requireAdmin(request);
-  if (authError) return authError;
+  const auth = await requireAdmin(request);
+  if (auth.error) return auth.error;
 
   try {
     await ensureIndexReady();
@@ -53,7 +54,13 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   try {
-    const result = await ingestUrl(url);
+    const result = await ingestUrl(url, auth.admin.email);
+    await auditSourceChange(auth.admin, {
+      action: result.replaced ? "updated" : "added",
+      filename: result.filename,
+      sourceName: result.pageTitle,
+      url: result.url,
+    });
     return json(200, { ok: true, ...result });
   } catch (err) {
     if (err instanceof UrlIngestError) {
