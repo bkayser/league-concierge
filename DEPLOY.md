@@ -200,7 +200,7 @@ Verify the correct model string at [docs.anthropic.com/en/docs/models-overview](
 
 ### Admin returns `401`
 
-The session is missing or expired (7 days), or the admin's email is no longer covered by `ADMIN_ALLOWLIST`. Sign in again, or fix the allowlist and redeploy.
+The session is missing or expired (30 days), or the admin's email is no longer covered by `ADMIN_ALLOWLIST`. Sign in again, or fix the allowlist and redeploy.
 
 ### Admin returns `500`
 

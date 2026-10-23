@@ -8,7 +8,7 @@ The admin UI (`/admin`) and the ingest/admin API routes are protected by per-use
 
 1. The admin enters their email. If the address is on the allowlist, the server emails a 6-digit code. The response looks the same whether or not the address is allowed, so the endpoint can't be used to probe the allowlist.
 2. The code expires after 10 minutes and allows 5 attempts. A new code can be requested once a minute. Codes are stored only as SHA-256 hashes.
-3. A correct code creates a session. The session token is stored in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production) and lasts 7 days. **Sign out** deletes it.
+3. A correct code creates a session. The session token is stored in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production) and lasts 30 days. **Sign out** deletes it.
 4. On first sign-in, the admin is asked for first name, last name, and phone number. Admin API routes refuse requests (`403 profile_incomplete`) until those are filled in, so every audit entry has a real name on it.
 5. The allowlist is checked again on **every** request. Removing an address or domain from `ADMIN_ALLOWLIST` and redeploying revokes that admin's access immediately, even if their session hasn't expired.
 

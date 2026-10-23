@@ -5,7 +5,7 @@ import { getDb, isLoggingEnabled } from "@/lib/db";
 // ---- Constants ----------------------------------------------------------
 
 export const SESSION_COOKIE = "admin_session";
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
