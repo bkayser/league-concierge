@@ -1,4 +1,4 @@
-# Deployment Runbook — OYSA RAG Chatbot
+# Deployment Runbook — League Concierge
 
 Step-by-step guide for deploying the application to Vercel for the first time and for verifying a successful deployment. Follow the steps in order — each one isolates a different failure surface.
 
@@ -11,7 +11,7 @@ Before starting:
 - All feature PRs are merged to `main`.
 - You have a Vercel account and the project is imported or linked (see Step 1).
 - You have the values for all required environment variables listed in Step 2.
-- The `oysa-docs` Pinecone index is already provisioned (confirmed). If setting up a brand-new Pinecone project, run `npm run create-index` locally first.
+- A Pinecone index exists for your deployment (for OYSA this is `oysa-docs`, already provisioned). If setting up a brand-new Pinecone project, run `npm run create-index` locally first.
 - **Optional — interaction logging:** If you want to enable logging, you also need a Neon Postgres database with the schema already applied. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md) for the full setup guide.
 
 ---
@@ -45,7 +45,7 @@ Add all variables in the Vercel project dashboard under **Settings → Environme
 | `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | `PINECONE_API_KEY` | [app.pinecone.io](https://app.pinecone.io) → project → API Keys |
-| `PINECONE_INDEX_NAME` | `oysa-docs` (the live index name) |
+| `PINECONE_INDEX_NAME` | Your Pinecone index name (`oysa-docs` for the OYSA deployment) |
 | `ADMIN_PASSWORD` | Choose a strong password for the admin UI |
 | `GENERATION_MODEL` | Current canonical value: `claude-sonnet-4-6` — verify at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview) before setting |
 
@@ -150,7 +150,7 @@ curl -s -X POST \
 curl -sI https://<deployment>.vercel.app/ | grep -i content-security-policy
 ```
 
-Expected output (exact spacing may vary):
+Expected output (exact spacing may vary; the origins come from `next.config.ts` and must match the site that embeds the iframe — shown here for OYSA):
 
 ```
 content-security-policy: frame-ancestors 'self' https://oregonyouthsoccer.org https://www.oregonyouthsoccer.org;
@@ -177,13 +177,13 @@ After a successful chat (step 4b), re-run this check to confirm an interaction r
 ## Step 5 — Configure custom domain (first time only)
 
 1. In the Vercel project, go to **Settings → Domains**.
-2. Add `chat.oregonyouthsoccer.org`.
+2. Add your chat subdomain (for OYSA: `chat.oregonyouthsoccer.org`).
 3. Vercel displays a CNAME record. Add it at your DNS provider:
    - **Type:** `CNAME`
    - **Name:** `chat`
    - **Value:** `cname.vercel-dns.com` (or the value Vercel shows)
 4. Wait for DNS propagation (usually a few minutes, up to 48 hours).
-5. Repeat the Step 4 checks using `https://chat.oregonyouthsoccer.org` once the domain is live.
+5. Repeat the Step 4 checks against the custom domain once it is live.
 
 ---
 
@@ -218,7 +218,7 @@ Verify the correct model string at [docs.anthropic.com/en/docs/models-overview](
 
 ### Admin returns `500`
 
-Pinecone credentials are incorrect. Verify `PINECONE_API_KEY` is the API key for the correct Pinecone project, and `PINECONE_INDEX_NAME` is exactly `oysa-docs` (case-sensitive).
+Pinecone credentials are incorrect. Verify `PINECONE_API_KEY` is the API key for the correct Pinecone project, and `PINECONE_INDEX_NAME` exactly matches the index name in that project (case-sensitive; `oysa-docs` for OYSA).
 
 ### `/api/admin/log` returns `502`
 
