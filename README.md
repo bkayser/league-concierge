@@ -110,8 +110,8 @@ PINECONE_INDEX_NAME=oysa-docs      # Pinecone index name (oysa-docs is OYSA's; u
 GENERATION_MODEL=claude-sonnet-4-6 # Anthropic model string — verify at https://docs.anthropic.com
 NEON_DATABASE_URL=postgresql://... # Required for admin; enables interaction logging
 ADMIN_ALLOWLIST=pat@example.org,example.org  # Admin emails and/or whole domains
-RESEND_API_KEY=re_...              # From the Resend Vercel Marketplace integration
-EMAIL_FROM="Ask Footy <no-reply@askfooty.com>"  # Verified Resend sender
+RESEND_API_KEY=re_...              # Resend sending key for the verified domain
+EMAIL_FROM="Ask Footy <askfooty@bravoking.net>"  # Sender on a Resend-verified domain
 ```
 
 ## RAG Pipeline

@@ -48,8 +48,8 @@ Add all variables in the Vercel project dashboard under **Settings → Environme
 | `PINECONE_INDEX_NAME` | Your Pinecone index name (`oysa-docs` for the OYSA deployment) |
 | `NEON_DATABASE_URL` | Neon project dashboard → **Connection string** (pooled). Required for admin sign-in and the audit log; also enables interaction logging. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md). |
 | `ADMIN_ALLOWLIST` | Comma-separated admin emails and/or domains (e.g. `pat@example.org,example.org`). See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). |
-| `RESEND_API_KEY` | Set automatically by `vercel integration add resend/resend-email` |
-| `EMAIL_FROM` | Sender for sign-in codes, on a domain verified in Resend |
+| `RESEND_API_KEY` | [resend.com](https://resend.com/api-keys) → API Keys → sending access, restricted to the sending domain |
+| `EMAIL_FROM` | Sender for sign-in codes on a domain verified in Resend, e.g. `Ask Footy <askfooty@bravoking.net>` |
 | `GENERATION_MODEL` | Current canonical value: `claude-sonnet-4-6` — verify at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview) before setting |
 
 > **Note on `GENERATION_MODEL`:** Anthropic returns a hard `404` for an invalid model string. If the chat endpoint returns errors immediately after deployment, this is the most likely cause. See the Troubleshooting section below.
@@ -69,7 +69,7 @@ vercel env add GENERATION_MODEL
 vercel env add NEON_DATABASE_URL
 vercel env add ADMIN_ALLOWLIST
 vercel env add EMAIL_FROM
-vercel integration add resend/resend-email   # provisions RESEND_API_KEY
+vercel env add RESEND_API_KEY
 ```
 
 ---

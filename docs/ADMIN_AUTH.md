@@ -32,15 +32,17 @@ Each entry stores the time, the source name, the normalized filename/URL key, an
 |---|---|
 | `NEON_DATABASE_URL` | **Required for admin access.** Users, codes, sessions, and the audit log live in Neon. Chat still works without it. |
 | `ADMIN_ALLOWLIST` | Comma-separated emails and domains. `pat@example.org` allows that one address. `example.org` or `@example.org` allows any address on that domain (not its subdomains). Case-insensitive. |
-| `RESEND_API_KEY` | Set automatically when the Resend integration is installed from the Vercel Marketplace. |
-| `EMAIL_FROM` | Sender for the code emails, e.g. `Ask Footy <admin@askfooty.com>`. The domain must be verified in Resend. |
+| `RESEND_API_KEY` | A Resend API key with sending access, restricted to the sending domain. |
+| `EMAIL_FROM` | Sender for the code emails. The domain must be verified in the same Resend account. |
 
 Example:
 
 ```
 ADMIN_ALLOWLIST=bill@example.com,oregonyouthsoccer.org
-EMAIL_FROM=Ask Footy <no-reply@askfooty.com>
+EMAIL_FROM=Ask Footy <askfooty@bravoking.net>
 ```
+
+The OYSA deployment sends from `bravoking.net`, a domain shared by several small projects. The display name and local part identify which project sent the email.
 
 `ADMIN_PASSWORD` is no longer used and can be removed from Vercel.
 
@@ -50,22 +52,21 @@ EMAIL_FROM=Ask Footy <no-reply@askfooty.com>
 
 ## Setup
 
-1. **Install Resend.** Accept the Marketplace terms, then:
+1. **Verify a sending domain in Resend.** In the [Resend dashboard](https://resend.com/domains), add the domain (region `us-east-1`, alongside Vercel and Neon) and create the DNS records it lists. You only do this once per domain; other projects can reuse it.
+
+2. **Create an API key** under **API Keys** with *Sending access*, restricted to that domain. Use one key per project so you can revoke one project's key without breaking the others.
+
+3. **Set the variables** for Production, Preview, and Development:
 
    ```bash
-   vercel integration add resend/resend-email
-   ```
-
-   In the Resend dashboard, verify the domain you'll send from.
-
-2. **Set the variables** for Production, Preview, and Development:
-
-   ```bash
-   vercel env add ADMIN_ALLOWLIST
+   vercel env add RESEND_API_KEY
    vercel env add EMAIL_FROM
+   vercel env add ADMIN_ALLOWLIST
    ```
 
-3. **Create the tables.** This is idempotent (`CREATE … IF NOT EXISTS`) and only adds tables:
+   The Resend integration on the Vercel Marketplace would also work, but it requires a new Resend account (its free plan isn't available to members of an existing Resend team). Nothing in the code depends on it.
+
+4. **Create the tables.** This is idempotent (`CREATE … IF NOT EXISTS`) and only adds tables:
 
    ```bash
    npm run migrate-admin-auth
@@ -73,7 +74,7 @@ EMAIL_FROM=Ask Footy <no-reply@askfooty.com>
 
    This creates `admin_users`, `admin_otps`, `admin_sessions`, and `source_audit`.
 
-4. **Redeploy**, open `/admin`, and sign in with an allowlisted address.
+5. **Redeploy**, open `/admin`, and sign in with an allowlisted address.
 
 ---
 

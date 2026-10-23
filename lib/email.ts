@@ -1,6 +1,6 @@
-// Sends transactional email through Resend's REST API. RESEND_API_KEY is
-// provisioned by the Vercel Marketplace integration; EMAIL_FROM must be an
-// address on a domain verified in Resend.
+// Sends transactional email through Resend's REST API. RESEND_API_KEY is a
+// Resend API key with sending access; EMAIL_FROM must be an address on a
+// domain verified in that Resend account.
 
 export class EmailNotConfiguredError extends Error {
   constructor() {
