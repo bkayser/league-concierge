@@ -23,19 +23,23 @@ console.log(`Calling Anthropic API (model: ${model})…`);
 
 const response = await anthropic.messages.create({
   model,
-  max_tokens: 64,
+  // Thinking tokens count against max_tokens on newer models.
+  max_tokens: 2000,
+  output_config: { effort: "low" },
   system: "You are a helpful assistant. Reply very briefly.",
   messages: [{ role: "user", content: 'Say "smoke test OK" and nothing else.' }],
 });
 
-const block = response.content[0];
-if (!block || block.type !== "text") {
+// Thinking blocks may precede the answer, so look for text anywhere.
+const text = response.content
+  .filter((b) => b.type === "text")
+  .map((b) => b.text)
+  .join("")
+  .trim();
+if (!text) {
   throw new Error(
-    `Expected a text content block, got: ${JSON.stringify(block)}`,
+    `Expected a non-empty text reply, got: ${JSON.stringify(response.content)}`,
   );
 }
-if (!block.text.trim()) {
-  throw new Error("Claude returned an empty text block");
-}
 
-console.log(`✓ Claude OK — model: "${model}", replied: "${block.text.trim()}"`);
+console.log(`✓ Claude OK — model: "${model}", replied: "${text}"`);

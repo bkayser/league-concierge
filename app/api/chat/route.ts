@@ -8,7 +8,7 @@ import { embedText } from "@/lib/embed";
 import { buildSystemPrompt } from "@/lib/prompt";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const TOP_K = 5;
 
@@ -135,7 +135,11 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     claudeResponse = await anthropic.messages.create({
       model,
-      max_tokens: 1024,
+      // Newer models think by default and thinking tokens count against
+      // max_tokens, so leave headroom beyond the visible answer.
+      max_tokens: 8000,
+      // Low effort keeps thinking short for FAQ-style chat answers.
+      output_config: { effort: "low" },
       system: systemPrompt,
       messages: messages as MessageParam[],
     });
@@ -146,14 +150,33 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
   }
 
-  const firstBlock = claudeResponse.content[0];
-  if (!firstBlock || firstBlock.type !== "text") {
+  if (claudeResponse.stop_reason === "refusal") {
+    console.warn("Claude declined the request:", claudeResponse.stop_details);
+    return json(200, {
+      reply:
+        "Sorry, I can't help with that one. Try rephrasing, or contact the league office.",
+      sources: [],
+      interactionId,
+    });
+  }
+
+  // Thinking blocks may precede the answer, so join the text blocks rather
+  // than assuming content[0] is text.
+  const replyText = claudeResponse.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+  if (!replyText) {
     console.error("Unexpected Claude response format:", claudeResponse.content);
     return json(500, { error: "Unexpected response format from Claude." });
   }
+  if (claudeResponse.stop_reason === "max_tokens") {
+    console.warn("Claude reply truncated at max_tokens");
+  }
 
   const latencyMs = Date.now() - startTime;
-  const responsePayload = { reply: firstBlock.text, sources, interactionId };
+  const responsePayload = { reply: replyText, sources, interactionId };
 
   if (isLoggingEnabled()) {
     // Use after() so Vercel keeps the function context alive until the DB
@@ -164,7 +187,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         id: interactionId,
         sessionId,
         prompt: latestUserMessage,
-        response: firstBlock.text,
+        response: replyText,
         sources: sourceMeta,
         modelVersion: model,
         chunksRetrieved: results.matches.length,
