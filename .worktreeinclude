@@ -1,0 +1,3 @@
+# Gitignored files Claude Code copies into the worktrees it creates.
+# Plain `git worktree add` ignores this file.
+.env.local
