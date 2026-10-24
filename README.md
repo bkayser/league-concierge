@@ -1,209 +1,137 @@
 # League Concierge
 
-A Retrieval-Augmented Generation (RAG) chatbot that lets an organization's members ask questions about its operational documents and competition rules through a chat widget embedded on the organization's website.
+A retrieval-augmented chatbot that answers members' questions from an organization's own documents: rulebooks, policies, and web pages. Members use it through a chat widget embedded in the organization's website. Administrators manage the documents through a web admin page; no command line is needed after setup.
 
-## About this project
+It was built for the [Oregon Youth Soccer Association](https://oregonyouthsoccer.org) (OYSA), where it runs at `footy.oregonyouthsoccer.org` as "Footy," a Sasquatch mascot. The code is MIT-licensed and you are welcome to fork it for your own organization. The OYSA branding is not licensed; see [Rebranding a fork](#rebranding-a-fork).
 
-League Concierge was built for the [Oregon Youth Soccer Association](https://oregonyouthsoccer.org) (OYSA), where it runs at `footy.oregonyouthsoccer.org` as "Footy," a Sasquatch mascot who answers questions from OYSA's rulebooks and policies. The code is released under the [MIT License](LICENSE). You are welcome to fork it and stand it up for your own organization, or just clone it to read and run locally. The OYSA deployment is the reference installation; this repository is not a generic product and makes no attempt to hide its origin. See [Rebranding a fork](#rebranding-a-fork) for what to change.
+## Features
 
-### Trademarks and mascot
+- **Chat widget** served from its own subdomain and embedded with an `<iframe>`. Multi-turn conversation, answers cite their source documents, and users can rate answers thumbs-up/down with an optional comment.
+- **Answers come only from your documents.** If the documents don't cover a question, the bot says so and points the user to the organization.
+- **Admin page** (`/admin`):
+  - **Documents**: upload PDF or Word (`.docx`) files, add up to 10 web page URLs at a time, refresh a web page, delete a source, and see how often each source has been cited.
+  - **Query Log**: the 100 most recent questions and answers, filterable by rating, with a 30-day CSV export.
+  - **Audit**: who added, updated, or removed each source, with a full CSV export.
+- **Admin sign-in** with a one-time code emailed to addresses on an allowlist. No passwords.
 
-The MIT License covers the code only. The following are **not** licensed and must be replaced in any fork:
-
-- The OYSA name and the OYSA shield logo (`app/icon.png`, `app/favicon.ico`), which belong to the Oregon Youth Soccer Association.
-- The Footy mascot: the image (`public/footy.png`) and the persona text in `lib/prompt.ts`.
-
-### Data handling
-
-End users are anonymous. The chat UI generates a session UUID in browser memory on page load; it is not stored in a cookie, `localStorage`, or `sessionStorage`, and it resets on refresh.
-
-- With `NEON_DATABASE_URL` **unset** (the default), nothing about a conversation is persisted. Messages go to OpenAI (embedding of the latest question), Pinecone (retrieval), and Anthropic (generation) and are subject to those providers' data policies.
-- With `NEON_DATABASE_URL` **set**, every chat turn is logged to your Postgres database: the user's message, the model's reply, the documents cited, the session UUID, and any thumbs-up/down rating with its optional comment. The admin UI exposes this log. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md).
-
-If you deploy this, post a privacy notice on the page that embeds the widget. That notice is the deployer's responsibility; it is not part of this repository.
-
-### Security notes for deployers
-
-- The admin UI and ingest endpoints require sign-in with an emailed one-time code. Only addresses or domains listed in `ADMIN_ALLOWLIST` can sign in. Source changes are audited per admin. See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). Serve only over HTTPS.
-- `/api/chat` and `/api/rate` are unauthenticated by design, and each chat call spends OpenAI and Anthropic credit. Put a rate limit in front of them (Vercel Firewall rules work) before linking from a public page.
-- `/api/ingest/url` fetches an arbitrary URL supplied by the admin. It is admin-only, but keep `ADMIN_ALLOWLIST` tight accordingly.
-
-## Architecture Overview
+## How it works
 
 ```
-your-org.example  (oregonyouthsoccer.org for OYSA)
+your-org.example
   └── <iframe src="https://chat.your-org.example">
-        └── Next.js app (hosted on Vercel)
-              ├── Public chat UI
-              ├── Password-protected admin UI
-              └── API routes (serverless functions)
-                    ├── /api/chat     → retrieve + generate
-                    └── /api/ingest   → upload + embed + store
-                          ├── OpenAI text-embedding-3-small (embeddings)
-                          ├── Anthropic Claude Sonnet (generation)
-                          └── Pinecone serverless (vector storage)
+        └── Next.js app on Vercel
+              ├── /          public chat UI
+              ├── /admin     admin UI (emailed-code sign-in)
+              └── /api/*     serverless routes
+                    ├── OpenAI text-embedding-3-small   embeddings
+                    ├── Pinecone serverless             vector search
+                    ├── Anthropic Claude                answer generation
+                    ├── Neon Postgres                   admins, sources, chat log, audit
+                    └── Resend                          sign-in code email
 ```
 
-## Tech Stack
+**Ingest.** Text is extracted from the file or web page, split into ~400-token chunks with 50-token overlap, embedded, and stored in Pinecone. The source is registered in Neon.
 
-| Role | Service | Notes |
-|---|---|---|
-| Hosting / serverless functions | Vercel | Free/Pro tier |
-| Embeddings | OpenAI `text-embedding-3-small` | 1536 dimensions, cosine similarity |
-| Generation | Anthropic Claude Sonnet | model string in `GENERATION_MODEL` env var |
-| Vector database | Pinecone serverless | Free tier; index name from `PINECONE_INDEX_NAME` (`oysa-docs` for OYSA) |
-| Frontend framework | Next.js (App Router) | React 19, TypeScript — all files `.ts`/`.tsx` |
+**Chat.** The latest question is embedded and the 5 closest chunks are retrieved. Those chunks and the full conversation go to Claude, which answers using only that context. The reply and the documents it drew on are returned to the widget and logged.
 
-## Key Design Decisions
+## Services you need
 
-- **OpenAI for embeddings only.** Embedding vectors are stored permanently in Pinecone. OpenAI's `text-embedding-3-small` is the stable long-term choice. Do not swap embedding providers without re-ingesting the entire corpus.
-- **Anthropic Claude for generation only.** Claude is used exclusively for chat response synthesis. It is not used for embeddings. Claude was chosen over GPT-4o for its stronger tendency to stay within provided context and decline gracefully when the answer isn't in the documents.
-- **Embedding model is fixed at `text-embedding-3-small` / 1536 dimensions.** The Pinecone index dimension is set to 1536 to match. This cannot be changed without destroying and recreating the index and re-embedding all documents.
-- **CORS is avoided by using an iframe embed.** The chat UI is served from Vercel (for OYSA at `footy.oregonyouthsoccer.org` via CNAME). The parent site drops in a single `<iframe>` tag; allowed parent origins are set in `next.config.ts` via `frame-ancestors`. All fetch calls are same-origin within the iframe context.
-- **Multi-turn conversation context** is maintained by sending full message history to Claude on each request. Only the latest user message is embedded for Pinecone retrieval.
+| Service | Used for |
+|---|---|
+| [Vercel](https://vercel.com) | Hosting |
+| [OpenAI](https://platform.openai.com) | Embeddings only |
+| [Anthropic](https://platform.claude.com) | Answer generation (the main per-use cost) |
+| [Pinecone](https://www.pinecone.io) | Vector database |
+| [Neon](https://neon.tech) | Postgres |
+| [Resend](https://resend.com) | Sign-in code email |
 
-## Project Structure
+All are required for a working deployment; free tiers are enough for a small organization except OpenAI and Anthropic, which bill per use. Chat runs without Neon, but nobody can sign in to add documents.
 
-```
-/
-├── app/
-│   ├── page.tsx              # Public chat widget UI
-│   ├── admin/
-│   │   └── page.tsx          # Password-protected document management UI
-│   └── api/
-│       ├── chat/
-│       │   └── route.ts      # POST: messages[] → retrieve → generate → reply
-│       ├── ingest/
-│       │   └── route.ts      # POST: file upload → chunk → embed → upsert to Pinecone
-│       └── admin/
-│           └── documents/
-│               ├── route.ts              # GET: list documents
-│               └── [filename]/
-│                   └── route.ts          # DELETE: remove document + chunks
-├── lib/
-│   ├── audit.ts              # auditSourceChange() — source add/update/remove log
-│   ├── auth.ts               # requireAdmin(), email OTP, sessions, allowlist
-│   ├── email.ts              # sendLoginCode() via Resend
-│   ├── chunk.ts              # chunkText() — token-based text chunking
-│   ├── clients.ts            # Singleton instances: OpenAI, Anthropic, Pinecone
-│   ├── embed.ts              # embedText(text) → float[1536] via OpenAI
-│   ├── extract.ts            # extractText() — PDF and DOCX text extraction
-│   ├── format.ts             # formatBytes(), normalizeFilename()
-│   ├── pinecone-readiness.ts # ensureIndexReady() — cached index health check
-│   └── prompt.ts             # buildSystemPrompt() — Claude system prompt builder
-├── scripts/
-│   ├── create-index.mjs     # One-time Pinecone index creation (idempotent)
-│   ├── smoke-embed.mjs      # Smoke test: OpenAI embeddings API
-│   ├── smoke-pinecone.mjs   # Smoke test: Pinecone index shape
-│   └── smoke-claude.mjs     # Smoke test: Anthropic API + GENERATION_MODEL validity
-├── .env.local                # Local dev secrets (gitignored)
-└── .cursorrules              # Cursor agent instructions
-```
+## Getting started
 
-## Environment Variables
+[DEPLOY.md](DEPLOY.md) walks through setup end to end: accounts, database, local run, Vercel deployment, embedding the widget, and troubleshooting.
+
+Reference:
+
+- [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md): admin sign-in, allowlist, audit log
+- [docs/DATABASE.md](docs/DATABASE.md): Neon schema, what is logged, maintenance
+
+## Data handling
+
+End users are anonymous. The chat page generates a session ID in browser memory when it loads; it is not stored in a cookie or browser storage and resets on refresh.
+
+Every chat turn is stored in your Neon database: the question, the answer, the documents cited, the session ID, response time, and any rating and comment. IP addresses are not stored. There is no switch to turn chat logging off. Questions are also sent to OpenAI (to embed the question) and Anthropic (to generate the answer), and are subject to their data policies.
+
+For administrators, the database stores email, name, phone number, sign-in times, and the audit trail of their source changes.
+
+The chat page links to a privacy policy at `/privacy` (`app/privacy/page.tsx`). It is written for OYSA; rewrite it for your organization, including the contact address and effective date.
+
+## Security
+
+- `/api/chat` and `/api/rate` are public by design, and every chat call costs OpenAI and Anthropic credit. Add a rate limit (for example a Vercel Firewall rule) before linking the widget from a public page.
+- Admin routes require a signed-in admin on `ADMIN_ALLOWLIST`. The URL ingest feature fetches any URL an admin enters, so keep the allowlist tight.
+- The admin page cannot be framed; the chat page can be framed only by the origins listed in `next.config.ts`.
+
+## Development
 
 ```bash
-OPENAI_API_KEY=sk-proj-...         # OpenAI — embeddings only
-ANTHROPIC_API_KEY=sk-ant-...       # Anthropic — generation only
-PINECONE_API_KEY=...               # Pinecone vector DB
-PINECONE_INDEX_NAME=oysa-docs      # Pinecone index name (oysa-docs is OYSA's; use your own)
-GENERATION_MODEL=claude-sonnet-5-5 # Anthropic model string — verify at https://docs.anthropic.com
-NEON_DATABASE_URL=postgresql://... # Required for admin; enables interaction logging
-ADMIN_ALLOWLIST=pat@example.org,example.org  # Admin emails and/or whole domains
-RESEND_API_KEY=re_...              # Resend sending key for the verified domain
-EMAIL_FROM="Ask Footy <askfooty@bravoking.net>"  # Sender on a Resend-verified domain
+npm install
+npm run dev            # http://localhost:3000 and /admin
+npm run lint
+npm run build
+npm run smoke          # checks OpenAI, Pinecone, and Anthropic credentials
 ```
 
-## RAG Pipeline
+Scripts read `.env.local`. Without Resend configured, sign-in codes are printed to the dev server log.
 
-### Ingest (run when documents are added/updated)
-
-1. Admin uploads PDF or Word document via `/admin` UI
-2. `/api/ingest` extracts text, splits into ~400 token chunks with overlap
-3. Each chunk is embedded via OpenAI `text-embedding-3-small` → 1536-dim vector
-4. Vector + chunk text + metadata (filename, chunk index) upserted to Pinecone
-
-### Query (every user message)
-
-1. User message received at `/api/chat` with full conversation history
-2. Latest user message embedded via OpenAI → query vector
-3. Pinecone queried for top 5 most similar chunks (cosine similarity)
-4. Retrieved chunks + conversation history sent to Claude with system prompt
-5. Claude response returned to UI with source citations
-
-## System Prompt Constraints
-
-The Claude system prompt must enforce:
-- Answer only from provided document context
-- Decline gracefully if the answer is not in the documents
-- Cite the source document when possible (e.g. "According to the 2024 OYSA Competition Rules...")
-- Never fabricate rules, eligibility requirements, dates, or fees
-
-## Admin UI Requirements
-
-The admin interface must be usable by a **non-technical administrator**. Requirements:
-- Simple password authentication (no OAuth, no user accounts)
-- Upload a document (PDF or Word) with a single button
-- View list of currently indexed documents with upload date
-- Delete a document from the index
-- No terminal, no CLI, no technical knowledge required
-
-## Embedding Strategy
-
-- Chunk size: ~400 tokens
-- Chunk overlap: ~50 tokens (to avoid cutting context at boundaries)
-- Metadata stored per chunk vector: `{ filename, originalFilename, chunkIndex, totalChunks, text }`
-- Metadata stored per header vector: `{ filename, originalFilename, uploadDate, fileSizeBytes, fileSizeDisplay, mimeType, totalChunks, chunkIds, uploadedBy }`
-- Namespace: use `production` namespace for chunks, `headers` namespace for document metadata
-
-## Deployment
-
-- Production URL for OYSA: `footy.oregonyouthsoccer.org` (CNAME → Vercel deployment)
-- Every push to `main` triggers automatic Vercel redeploy
-- Environment variables managed in Vercel dashboard (never in source)
-
-## Local Verification
-
-Run all three smoke checks in sequence to confirm every external service is reachable before developing or deploying:
-
-```bash
-npm run smoke
 ```
-
-This runs:
-1. `smoke-embed.mjs` — calls OpenAI `text-embedding-3-small`, asserts a 1536-element array of finite floats
-2. `smoke-pinecone.mjs` — calls `describeIndex`, asserts `dimension === 1536` and `metric === "cosine"`
-3. `smoke-claude.mjs` — sends a minimal request to Anthropic, reads the model from `GENERATION_MODEL`, and asserts a non-empty text reply back. **Fails immediately if `GENERATION_MODEL` is unset or the model string is invalid** — this is the most common first-deploy failure.
-
-### Manual end-to-end flow
-
-Run once after any significant change to the ingest or chat pipeline:
-
-1. `npm run dev` → open `http://localhost:3000/admin`, sign in with an allowlisted email (without Resend configured, the code is printed in the dev server log), upload a small known PDF
-2. Open `http://localhost:3000`, ask a question whose answer is in that PDF — confirm a reply with the document cited as a source chip
-3. Delete the document from `/admin`, ask the same question — confirm a graceful "I don't have information about that" response
-4. *(Fresh Pinecone project only — OYSA's `oysa-docs` index is already provisioned):* `npm run create-index`
+app/
+  page.tsx                       chat widget
+  admin/page.tsx, AdminLogin.tsx admin UI and sign-in screens
+  api/chat, api/rate             public chat and rating
+  api/ingest, api/ingest/url     file and URL ingest (admin)
+  api/admin/...                  documents, log, audit, auth, profile (admin)
+  privacy/page.tsx               privacy policy linked from the chat footer
+lib/
+  prompt.ts      system prompt and bot persona
+  clients.ts     OpenAI, Anthropic, Pinecone clients and index
+  embed.ts       embeddings
+  chunk.ts       token chunking
+  extract.ts     PDF, DOCX, and HTML text extraction
+  ingest-url.ts  URL ingest pipeline
+  db.ts          Neon queries
+  auth.ts        sign-in codes, sessions, allowlist, requireAdmin()
+  audit.ts       source audit helper
+  email.ts       Resend email
+scripts/
+  create-index.mjs        create the Pinecone index
+  migrate-admin-auth.mjs  create admin and audit tables
+  sync-sources.mjs        rebuild the Neon sources table from Pinecone
+  smoke-*.mjs             credential checks
+```
 
 ## Rebranding a fork
 
-Branding is plain strings and three image files; there is no config layer. Everything OYSA-specific is listed here.
+Branding is plain strings and image files; there is no configuration layer.
 
 | File | What to change |
 |---|---|
-| `lib/prompt.ts` | The Footy persona paragraph, the "contact OYSA directly" fallback, and the example out-of-scope reply |
-| `app/page.tsx` | Page heading, mascot `<img>` and alt text, greeting, input placeholder, footer disclaimer |
-| `app/admin/page.tsx` | "OYSA Document Admin" heading (two places), CSV download filename |
-| `app/layout.tsx` | `<title>` and meta description |
-| `next.config.ts` | `frame-ancestors` origins: the site(s) allowed to embed the widget |
-| `lib/clients.ts`, `lib/pinecone-readiness.ts`, `scripts/create-index.mjs`, `scripts/smoke-pinecone.mjs`, `scripts/sync-sources.mjs` | The `?? "oysa-docs"` fallback index name. Setting `PINECONE_INDEX_NAME` everywhere makes this moot, but change the fallbacks so a missing env var cannot point at the wrong index |
-| `lib/extract.ts` | The `OYSABot/1.0` User-Agent sent when ingesting from a URL |
-| `app/api/admin/log/route.ts` | CSV download filename |
-| `app/icon.png`, `app/favicon.ico` | OYSA shield logo; replace with your own |
-| `public/footy.png` | Mascot image; replace or remove along with the mascot references above |
-| `README.md`, `DEPLOY.md`, `.cursorrules`, `docs/LOGGING_SETUP.md` | Prose that names OYSA as the example deployment |
+| `lib/prompt.ts` | Persona, tone, and the "contact OYSA" fallback |
+| `app/page.tsx` | Heading, mascot image and alt text, greeting, input placeholder, footer disclaimer |
+| `app/admin/page.tsx`, `app/admin/AdminLogin.tsx` | "OYSA Document Admin" heading; CSV download filenames in `page.tsx` |
+| `app/api/admin/log/route.ts`, `app/api/admin/audit/route.ts` | CSV download filenames |
+| `app/privacy/page.tsx` | Whole policy: organization, domain, contact email, date, data practices |
+| `app/layout.tsx` | Page title and description |
+| `lib/email.ts` | "Ask Footy" in the sign-in email subject and body |
+| `lib/extract.ts` | `OYSABot/1.0` user agent for URL ingest |
+| `next.config.ts` | `frame-ancestors`: the sites allowed to embed the widget |
+| `lib/clients.ts`, `lib/pinecone-readiness.ts`, `scripts/*.mjs` | The `"oysa-docs"` fallback index name |
+| `app/icon.png`, `app/favicon.ico`, `public/footy.png` | OYSA shield logo and mascot image |
 
-A find across the tree for `OYSA`, `oregonyouthsoccer`, and `Footy` catches all of the above.
+Searching for `OYSA`, `oysa`, `Oregon`, and `Footy` finds all of them.
+
+The OYSA name and shield logo belong to the Oregon Youth Soccer Association. The Footy mascot image and persona are also not covered by the license. Replace all of them in a fork.
 
 ## License
 
-[MIT](LICENSE). Copyright (c) 2026 William Kayser. See [Trademarks and mascot](#trademarks-and-mascot) for what the license does not cover.
+[MIT](LICENSE). Copyright (c) 2026 William Kayser. The license covers the code only, not the OYSA or Footy branding.

@@ -142,7 +142,7 @@ export async function ingestUrl(
 
   if (isLoggingEnabled()) {
     const fileSizeBytes = Buffer.byteLength(text, "utf8");
-    upsertSource({
+    await upsertSource({
       filename,
       originalFilename: pageTitle,
       uploadDate: new Date().toISOString(),
