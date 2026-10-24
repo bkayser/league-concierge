@@ -184,7 +184,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 
   if (isLoggingEnabled()) {
-    upsertSource({
+    await upsertSource({
       filename,
       originalFilename,
       uploadDate: new Date().toISOString(),

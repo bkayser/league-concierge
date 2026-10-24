@@ -42,7 +42,7 @@ export async function DELETE(
   });
 
   if (isLoggingEnabled()) {
-    softDeleteSource(decoded).catch((err) =>
+    await softDeleteSource(decoded).catch((err) =>
       console.error("Source soft-delete failed:", err),
     );
   }

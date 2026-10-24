@@ -1,239 +1,144 @@
-# Deployment Runbook — League Concierge
+# Setup and Deployment
 
-Step-by-step guide for deploying the application to Vercel for the first time and for verifying a successful deployment. Follow the steps in order — each one isolates a different failure surface.
+Do the steps in order. Steps 1–5 get the app running locally against real services; steps 6–9 put it on Vercel and embed it in your site.
 
----
+## 1. Accounts and keys
 
-## Prerequisites
-
-Before starting:
-
-- All feature PRs are merged to `main`.
-- You have a Vercel account and the project is imported or linked (see Step 1).
-- You have the values for all required environment variables listed in Step 2.
-- A Pinecone index exists for your deployment (for OYSA this is `oysa-docs`, already provisioned). If setting up a brand-new Pinecone project, run `npm run create-index` locally first.
-- **Optional — interaction logging:** If you want to enable logging, you also need a Neon Postgres database with the schema already applied. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md) for the full setup guide.
-
----
-
-## Step 1 — Link the repository to Vercel
-
-**Option A — Vercel dashboard (recommended for first time)**
-
-1. Go to [vercel.com/new](https://vercel.com/new).
-2. Click **Import Git Repository** and select `league-concierge`.
-3. Leave the framework preset as **Next.js** (auto-detected).
-4. Do **not** deploy yet — continue to Step 2 to add environment variables first.
-
-**Option B — Vercel CLI**
-
-```bash
-npm install -g vercel   # install CLI globally (not as a project dependency)
-vercel link             # follow prompts to link to an existing project
-```
-
----
-
-## Step 2 — Add environment variables in Vercel
-
-Add all variables in the Vercel project dashboard under **Settings → Environment Variables**. Set each variable for **Production**, **Preview**, and **Development** environments unless noted otherwise.
-
-### Required
-
-| Variable | Where to get the value |
+| Variable | Where to get it |
 |---|---|
 | `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
-| `PINECONE_API_KEY` | [app.pinecone.io](https://app.pinecone.io) → project → API Keys |
-| `PINECONE_INDEX_NAME` | Your Pinecone index name (`oysa-docs` for the OYSA deployment) |
-| `NEON_DATABASE_URL` | Neon project dashboard → **Connection string** (pooled). Required for admin sign-in and the audit log; also enables interaction logging. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md). |
-| `ADMIN_ALLOWLIST` | Comma-separated admin emails and/or domains (e.g. `pat@example.org,example.org`). See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). |
-| `RESEND_API_KEY` | [resend.com](https://resend.com/api-keys) → API Keys → sending access, restricted to the sending domain |
-| `EMAIL_FROM` | Sender for sign-in codes on a domain verified in Resend, e.g. `Ask Footy <askfooty@bravoking.net>` |
-| `GENERATION_MODEL` | Current canonical value: `claude-sonnet-5-5` — verify at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview) before setting |
+| `ANTHROPIC_API_KEY` | [platform.claude.com](https://platform.claude.com) → API Keys |
+| `GENERATION_MODEL` | A Claude model ID, e.g. `claude-sonnet-5-5`. See the [models overview](https://platform.claude.com/docs/en/models/overview). |
+| `PINECONE_API_KEY` | [app.pinecone.io](https://app.pinecone.io) → your project → API Keys |
+| `PINECONE_INDEX_NAME` | A name you choose, e.g. `acme-docs`. Step 3 creates it. |
+| `NEON_DATABASE_URL` | Step 4 |
+| `ADMIN_ALLOWLIST` | Comma-separated admin emails and/or domains, e.g. `pat@example.org,example.org`. See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Step 5. Optional for local development. |
+| `PRIVACY_CONTACT_EMAIL` | Contact address shown on the `/privacy` page. Not a secret. Without it the page shows a generic contact line. Read at build time, so redeploy after changing it. |
 
-> **Note on `GENERATION_MODEL`:** Anthropic returns a hard `404` for an invalid model string. If the chat endpoint returns errors immediately after deployment, this is the most likely cause. See the Troubleshooting section below.
-
-### Neon and interaction logging
-
-Without `NEON_DATABASE_URL` the chat still works, but nobody can sign in to the admin UI. With it set, all chat interactions are logged, the sources registry is enabled, and the admin UI gains a Log tab. Run `npm run migrate-admin-auth` once to create the admin and audit tables.
-
-**Alternatively, via CLI:**
+## 2. Install and configure
 
 ```bash
-vercel env add OPENAI_API_KEY
-vercel env add ANTHROPIC_API_KEY
-vercel env add PINECONE_API_KEY
-vercel env add PINECONE_INDEX_NAME
-vercel env add GENERATION_MODEL
-vercel env add NEON_DATABASE_URL
-vercel env add ADMIN_ALLOWLIST
-vercel env add EMAIL_FROM
-vercel env add RESEND_API_KEY
+git clone <your fork>
+cd league-concierge
+npm install
 ```
 
----
-
-## Step 3 — Trigger the first production deployment
-
-**Option A — push to main (automatic)**
+Create `.env.local` in the project root (it is gitignored):
 
 ```bash
-git push origin main
+OPENAI_API_KEY=sk-proj-...
+ANTHROPIC_API_KEY=sk-ant-...
+GENERATION_MODEL=claude-sonnet-5-5
+PINECONE_API_KEY=...
+PINECONE_INDEX_NAME=acme-docs
+NEON_DATABASE_URL=postgresql://...
+ADMIN_ALLOWLIST=you@example.org
+RESEND_API_KEY=re_...
+EMAIL_FROM="Acme Concierge <concierge@mail.example.org>"
+PRIVACY_CONTACT_EMAIL=privacy@example.org
 ```
 
-Vercel picks up the push and deploys automatically.
-
-**Option B — CLI**
+## 3. Create the Pinecone index
 
 ```bash
-vercel --prod
+npm run create-index
 ```
 
-Watch the build log in the Vercel dashboard. A successful build shows all routes in the output:
+Creates a serverless index (AWS `us-east-1`, 1536 dimensions, cosine) named `PINECONE_INDEX_NAME`. Safe to re-run.
 
-```
-Route (app)
-┌ ○ /
-├ ○ /_not-found
-├ ○ /admin
-├ ƒ /api/admin/documents
-├ ƒ /api/admin/documents/[filename]
-├ ƒ /api/admin/documents/[filename]/refresh
-├ ƒ /api/admin/log
-├ ƒ /api/chat
-├ ƒ /api/ingest
-├ ƒ /api/ingest/url
-└ ƒ /api/rate
-```
+## 4. Create the Neon database
 
----
+1. In the [Neon console](https://console.neon.tech), create a project in **AWS us-east-1**.
+2. Copy the **pooled** connection string into `NEON_DATABASE_URL`.
+3. Open the Neon **SQL Editor** and run the schema in [docs/DATABASE.md](docs/DATABASE.md#schema).
+4. Create the admin and audit tables:
 
-## Step 4 — Post-deploy verification
+   ```bash
+   npm run migrate-admin-auth
+   ```
 
-Run these checks **in order** — each one isolates a different failure surface.
+## 5. Set up email (Resend)
 
-Replace `<deployment>.vercel.app` with your actual Vercel deployment URL throughout.
+Skip this for local development; codes are printed to the dev server log instead.
 
-### 4a — Admin sign-in (confirms Neon, Resend, allowlist + Pinecone credentials)
+1. In [Resend](https://resend.com/domains), add and verify a sending domain (region `us-east-1`).
+2. Create an API key with **Sending access**, restricted to that domain.
+3. Set `RESEND_API_KEY`, and set `EMAIL_FROM` to an address on that domain.
 
-Open `https://<deployment>.vercel.app/admin`, enter an allowlisted email, and sign in with the emailed code. On first sign-in you'll be asked for your name and phone. The Documents tab should then load.
-
-| Symptom | Meaning |
-|---|---|
-| No email arrives | Address isn't in `ADMIN_ALLOWLIST`, or `EMAIL_FROM` isn't on a Resend-verified domain (check the Resend dashboard logs) |
-| "Could not send the sign-in code" | `RESEND_API_KEY`/`EMAIL_FROM` missing, or the admin tables don't exist — run `npm run migrate-admin-auth` |
-| Signed in, but documents fail to load | Pinecone credentials are wrong or missing — check `PINECONE_API_KEY` and `PINECONE_INDEX_NAME` |
-
-### 4b — Chat endpoint (confirms GENERATION_MODEL is valid)
+## 6. Verify locally
 
 ```bash
-curl -s -X POST \
-  -H "Content-Type: application/json" \
+npm run smoke
+npm run dev
+```
+
+`smoke` checks the OpenAI, Pinecone, and Anthropic credentials and the `GENERATION_MODEL` value. Then:
+
+1. Open `http://localhost:3000/admin`, sign in with an allowlisted email, and fill in your name and phone.
+2. Upload a small PDF.
+3. Open `http://localhost:3000` and ask a question the PDF answers. The reply should cite it.
+4. Check that the question appears on the admin **Query Log** tab and the upload on the **Audit** tab.
+
+## 7. Deploy to Vercel
+
+1. At [vercel.com/new](https://vercel.com/new), import your fork. Keep the Next.js preset. Don't deploy yet.
+2. Under **Settings → Environment Variables**, add every variable from `.env.local` for Production and Preview. In production `RESEND_API_KEY` and `EMAIL_FROM` are required.
+3. Deploy. After that, every push to `main` redeploys. Environment variable changes take effect on the next deployment.
+
+Repeat the checks in step 6 against `https://<project>.vercel.app`. The chat API can also be checked directly:
+
+```bash
+curl -s -X POST -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"hello"}]}' \
-  https://<deployment>.vercel.app/api/chat
+  https://<project>.vercel.app/api/chat
 ```
 
-| Response | Meaning |
-|---|---|
-| `200` + `{ "reply": "...", "sources": [...], "interactionId": "..." }` | ✓ Chat endpoint working, model string valid |
-| `404` or `500` | Almost certainly `GENERATION_MODEL` is unset or invalid — see Troubleshooting |
+Expect `200` with `{ "reply": ..., "sources": [...], "interactionId": ... }`.
 
-### 4c — CSP frame-ancestors header (confirms iframe embedding will work)
+## 8. Custom domain and embedding
+
+1. In Vercel, **Settings → Domains**, add a subdomain such as `chat.example.org` and create the CNAME record it shows at your DNS provider.
+2. In `next.config.ts`, set `frame-ancestors` to the origins of the site that will embed the widget, and deploy.
+3. On your site, add:
+
+   ```html
+   <iframe src="https://chat.example.org" title="Ask our assistant"
+           style="width:100%; height:700px; border:0"></iframe>
+   ```
+
+Confirm the header:
 
 ```bash
-curl -sI https://<deployment>.vercel.app/ | grep -i content-security-policy
+curl -sI https://chat.example.org/ | grep -i content-security-policy
 ```
 
-Expected output (exact spacing may vary; the origins come from `next.config.ts` and must match the site that embeds the iframe — shown here for OYSA):
+## 9. Rate limiting
 
-```
-content-security-policy: frame-ancestors 'self' https://oregonyouthsoccer.org https://www.oregonyouthsoccer.org;
-```
-
-### 4d — Logging and audit
-
-While signed in to `/admin`, the **Query Log** and **Audit** tabs should load. Upload or delete a test document and confirm it shows up on the Audit tab with your name.
-| `502` | Neon connection failed — check the connection string and that the schema migration has been run |
-
-After a successful chat (step 4b), re-run this check to confirm an interaction row was written.
-
----
-
-## Step 5 — Configure custom domain (first time only)
-
-1. In the Vercel project, go to **Settings → Domains**.
-2. Add your chat subdomain (for OYSA: `footy.oregonyouthsoccer.org`).
-3. Vercel displays a CNAME record. Add it at your DNS provider:
-   - **Type:** `CNAME`
-   - **Name:** `chat`
-   - **Value:** `cname.vercel-dns.com` (or the value Vercel shows)
-4. Wait for DNS propagation (usually a few minutes, up to 48 hours).
-5. Repeat the Step 4 checks against the custom domain once it is live.
-
----
+`/api/chat` is public and each call costs money. Before linking it from a public page, add a rate-limit rule for `/api/chat` and `/api/rate` under **Firewall** in the Vercel project.
 
 ## Troubleshooting
 
-### Chat returns `404` or `500`
+### Chat
 
-The most likely cause is an invalid `GENERATION_MODEL` value. Check Vercel function logs:
+| Response from `/api/chat` | Cause |
+|---|---|
+| `500` "GENERATION_MODEL environment variable is not set" | Set it and redeploy. |
+| `502` "Failed to generate a response" | Anthropic rejected the call: bad `GENERATION_MODEL` or `ANTHROPIC_API_KEY`. The function log has Anthropic's error. |
+| `502` "Failed to process your message" | OpenAI embedding failed: check `OPENAI_API_KEY`. |
+| `500` with no message | Usually Pinecone: check `PINECONE_API_KEY` and `PINECONE_INDEX_NAME`. |
 
-1. Vercel dashboard → project → **Functions** tab
-2. Select the `/api/chat` function
-3. View recent invocations — the log will show the exact error from Anthropic
+Function logs are in the Vercel dashboard under **Logs**, filtered to the route.
 
-A bad model string is fixed entirely in the **Vercel Environment Variables UI** — no code change required. After updating the value, trigger a redeploy:
+### Admin
 
-```bash
-vercel --prod --force   # no-op redeploy to pick up the new env var
-```
-
-Or push an empty commit:
-
-```bash
-git commit --allow-empty -m "chore: trigger redeploy"
-git push origin main
-```
-
-Verify the correct model string at [docs.anthropic.com/en/docs/models-overview](https://docs.anthropic.com/en/docs/models-overview).
-
-### Admin returns `401`
-
-The session is missing or expired (30 days), or the admin's email is no longer covered by `ADMIN_ALLOWLIST`. Sign in again, or fix the allowlist and redeploy.
-
-### Admin returns `500`
-
-Pinecone credentials are incorrect. Verify `PINECONE_API_KEY` is the API key for the correct Pinecone project, and `PINECONE_INDEX_NAME` exactly matches the index name in that project (case-sensitive; `oysa-docs` for OYSA).
-
-### `/api/admin/log` returns `502`
-
-The Neon connection failed. Common causes:
-
-- `NEON_DATABASE_URL` is set but the connection string is incorrect or from the wrong project
-- The schema migration has not been run — see [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md)
-- The Neon project is on the free tier and was suspended due to inactivity — open the Neon console to wake it; it resumes within a few seconds
-
-### Documents list is empty after enabling `NEON_DATABASE_URL`
-
-The sources table is empty because documents were ingested before `NEON_DATABASE_URL` was configured. Run:
-
-```bash
-npm run sync-sources
-```
-
-This reads all header records from Pinecone and upserts them into the Neon `sources` table. Safe to re-run. See [docs/LOGGING_SETUP.md](docs/LOGGING_SETUP.md) for details.
-
-### `maxDuration` limit hit on ingest
-
-`/api/ingest` has `maxDuration = 60` (seconds). The **Hobby** tier on Vercel supports up to 60s for Functions — should be sufficient. If large documents time out, upgrade to **Pro** (300s limit) or split the document before uploading.
-
-### Cross-region latency on Pinecone queries
-
-If chat responses feel slow, pin the Vercel Functions to the same region as the Pinecone index (`us-east-1` → Vercel region `iad1`). Add to the relevant route files:
-
-```ts
-export const preferredRegion = "iad1";
-```
-
-This is a follow-up optimisation — not required for v1.
+| Symptom | Cause |
+|---|---|
+| No email arrives | The address isn't covered by `ADMIN_ALLOWLIST` (the page doesn't say so, by design), or `EMAIL_FROM` isn't on a verified Resend domain. Check Resend's logs. |
+| "Could not send the sign-in code" | `RESEND_API_KEY` or `EMAIL_FROM` missing in production, or the admin tables don't exist (`npm run migrate-admin-auth`). |
+| `500` "NEON_DATABASE_URL is required" | Set `NEON_DATABASE_URL`. |
+| `502` "Database unavailable" | Neon connection string is wrong, the schema hasn't been applied, or a free-tier Neon project is suspended (open the console to wake it). |
+| `401` | Session expired (30 days) or the email was removed from the allowlist. Sign in again. |
+| Upload returns `503` "Vector index not ready" | The index named by `PINECONE_INDEX_NAME` doesn't exist in that Pinecone project. |
+| Upload of a large document times out | Ingest routes have `maxDuration = 60`. Raise it in the route file (the Vercel plan limit is higher) or split the document. |
+| Documents list empty but Pinecone has content | The Neon `sources` table is out of sync. Run `npm run sync-sources`. |
