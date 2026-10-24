@@ -10,7 +10,7 @@ It was built for the [Oregon Youth Soccer Association](https://oregonyouthsoccer
 - **Answers come only from your documents.** If the documents don't cover a question, the bot says so and points the user to the organization.
 - **Admin page** (`/admin`):
   - **Documents**: upload PDF or Word (`.docx`) files, add up to 10 web page URLs at a time, refresh a web page, delete a source, and see how often each source has been cited.
-  - **Query Log**: the 100 most recent questions and answers, filterable by rating, with a 30-day CSV export.
+  - **Query Log**: the 100 most recent questions and answers, filterable by rating, with a 30-day CSV export. Click a row to see the exchange as the user saw it; the trash icon permanently deletes it.
   - **Audit**: who added, updated, or removed each source, with a full CSV export.
 - **Admin sign-in** with a one-time code emailed to addresses on an allowlist. No passwords.
 
