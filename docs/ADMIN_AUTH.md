@@ -47,6 +47,7 @@ Each entry stores the time, the source name and key, the URL if any, and the adm
 | `/api/admin/documents/[filename]` | DELETE | admin | Delete a source |
 | `/api/admin/documents/[filename]/refresh` | POST | admin | Re-fetch a URL source |
 | `/api/admin/log` | GET `?filter=all\|rated\|unrated`, `?download=true` | admin | Query log, or 30-day CSV |
+| `/api/admin/log/[id]` | DELETE | admin | Permanently delete one logged question and answer |
 | `/api/admin/audit` | GET, `?download=true` | admin | Audit log, or full CSV |
 | `/api/ingest` | POST multipart `file` | admin | Upload a PDF or DOCX |
 | `/api/ingest/url` | POST `{ url }` | admin | Ingest a web page |

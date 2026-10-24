@@ -52,6 +52,7 @@ export interface InteractionRow {
   created_at: string;
   updated_at: string | null;
   sources_display?: string;
+  sources?: string[];
 }
 
 // ---- Sources ------------------------------------------------------------
@@ -273,6 +274,15 @@ export async function rateInteraction(params: {
   return rows.length > 0;
 }
 
+// interaction_sources rows go with it via ON DELETE CASCADE.
+export async function deleteInteraction(id: string): Promise<boolean> {
+  const sql = getDb();
+  const rows = (await sql`
+    DELETE FROM interactions WHERE id = ${id}::uuid RETURNING id
+  `) as { id: string }[];
+  return rows.length > 0;
+}
+
 // ---- Log queries --------------------------------------------------------
 
 // Each filter variant is written out in full because neon tagged template
@@ -291,7 +301,9 @@ export async function getLog(params: {
         COALESCE(string_agg(
           CASE WHEN s.is_active THEN s.original_filename
                ELSE s.original_filename || ' (deleted)' END,
-          ', ' ORDER BY s.original_filename), '') AS sources_display
+          ', ' ORDER BY s.original_filename), '') AS sources_display,
+        COALESCE(array_agg(s.original_filename ORDER BY s.original_filename)
+          FILTER (WHERE s.id IS NOT NULL), '{}') AS sources
       FROM interactions i
       LEFT JOIN interaction_sources iss ON iss.interaction_id = i.id
       LEFT JOIN sources s ON s.id = iss.source_id
@@ -306,7 +318,9 @@ export async function getLog(params: {
         COALESCE(string_agg(
           CASE WHEN s.is_active THEN s.original_filename
                ELSE s.original_filename || ' (deleted)' END,
-          ', ' ORDER BY s.original_filename), '') AS sources_display
+          ', ' ORDER BY s.original_filename), '') AS sources_display,
+        COALESCE(array_agg(s.original_filename ORDER BY s.original_filename)
+          FILTER (WHERE s.id IS NOT NULL), '{}') AS sources
       FROM interactions i
       LEFT JOIN interaction_sources iss ON iss.interaction_id = i.id
       LEFT JOIN sources s ON s.id = iss.source_id
@@ -321,7 +335,9 @@ export async function getLog(params: {
         COALESCE(string_agg(
           CASE WHEN s.is_active THEN s.original_filename
                ELSE s.original_filename || ' (deleted)' END,
-          ', ' ORDER BY s.original_filename), '') AS sources_display
+          ', ' ORDER BY s.original_filename), '') AS sources_display,
+        COALESCE(array_agg(s.original_filename ORDER BY s.original_filename)
+          FILTER (WHERE s.id IS NOT NULL), '{}') AS sources
       FROM interactions i
       LEFT JOIN interaction_sources iss ON iss.interaction_id = i.id
       LEFT JOIN sources s ON s.id = iss.source_id

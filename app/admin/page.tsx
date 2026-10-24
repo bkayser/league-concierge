@@ -8,11 +8,11 @@ import {
   ThumbsUp,
   Trash,
   WarningCircle,
+  X,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
+import { ChatMarkdown, SourceChip } from "../ChatParts";
 import AdminLogin, { type AdminUser } from "./AdminLogin";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel serverless body limit headroom)
@@ -70,6 +70,7 @@ interface InteractionRow {
   created_at: string;
   updated_at: string | null;
   sources_display: string;
+  sources: string[];
 }
 
 function formatDate(iso: string): string {
@@ -142,6 +143,9 @@ export default function AdminPage() {
   const [logFilter, setLogFilter] = useState<"all" | "rated" | "unrated">("all");
   const [logRows, setLogRows] = useState<InteractionRow[]>([]);
   const [logLoading, setLogLoading] = useState(false);
+  const [previewRow, setPreviewRow] = useState<InteractionRow | null>(null);
+  const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+  const [logDeleteError, setLogDeleteError] = useState<string | null>(null);
 
   const [auditRows, setAuditRows] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -241,6 +245,15 @@ export default function AdminPage() {
       cancelled = true;
     };
   }, [handleAuthenticated]);
+
+  useEffect(() => {
+    if (!previewRow) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setPreviewRow(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewRow]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFileError(null);
@@ -523,6 +536,8 @@ export default function AdminPage() {
     setActiveTab("documents");
     setLogRows([]);
     setLogFilter("all");
+    setPreviewRow(null);
+    setLogDeleteError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -539,6 +554,34 @@ export default function AdminPage() {
       // silently fail — log view shows stale data
     } finally {
       setLogLoading(false);
+    }
+  }
+
+  async function handleDeleteInteraction(row: InteractionRow) {
+    const preview =
+      row.prompt.length > 80 ? row.prompt.slice(0, 80) + "…" : row.prompt;
+    const confirmed = window.confirm(
+      `Permanently delete this question and answer?\n\n"${preview}"`,
+    );
+    if (!confirmed) return;
+    setLogDeleteError(null);
+    setDeletingLogId(row.id);
+    try {
+      const res = await fetch(`/api/admin/log/${row.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setLogDeleteError(data.error ?? `Delete failed (HTTP ${res.status}).`);
+        return;
+      }
+      setLogRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch {
+      setLogDeleteError(
+        "Delete failed. Please check your connection and try again.",
+      );
+    } finally {
+      setDeletingLogId(null);
     }
   }
 
@@ -1108,6 +1151,12 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {logDeleteError && (
+              <div className="px-6 py-3 bg-red-50 border-b border-red-100">
+                <p className="text-sm text-red-600">{logDeleteError}</p>
+              </div>
+            )}
+
             {logLoading ? (
               <div className="px-6 py-12 text-center">
                 <p className="text-sm text-gray-400">Loading…</p>
@@ -1132,37 +1181,41 @@ export default function AdminPage() {
                     {logRows.map((row) => (
                       <tr
                         key={row.id}
-                        className="align-top hover:bg-gray-50 transition-colors"
+                        onClick={() => setPreviewRow(row)}
+                        className="align-top cursor-pointer hover:bg-gray-50 transition-colors"
                       >
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                           <div>{formatDate(row.created_at)}</div>
                           <div className="text-xs text-gray-400 mt-0.5">{formatLatency(row.latency_ms)}</div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleDeleteInteraction(row);
+                            }}
+                            disabled={deletingLogId === row.id}
+                            aria-label="Delete"
+                            title="Delete permanently"
+                            className="group -ml-1.5 mt-1 p-1.5 rounded text-red-500 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                          >
+                            <Trash size={16} weight="regular" className="group-hover:hidden" />
+                            <Trash size={16} weight="fill" className="hidden group-hover:block" />
+                          </button>
                         </td>
-                        <td className="px-4 py-3 max-w-xs">
-                          <details>
-                            <summary className="cursor-pointer text-gray-900 list-none">
-                              {row.prompt.length > 80
-                                ? row.prompt.slice(0, 80) + "…"
-                                : row.prompt}
-                            </summary>
-                            <p className="mt-2 text-gray-600 whitespace-pre-wrap text-xs">
-                              {row.prompt}
-                            </p>
-                          </details>
+                        <td className="px-4 py-3 max-w-xs text-gray-900">
+                          <button
+                            type="button"
+                            className="text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 rounded"
+                          >
+                            {row.prompt.length > 80
+                              ? row.prompt.slice(0, 80) + "…"
+                              : row.prompt}
+                          </button>
                         </td>
-                        <td className="px-4 py-3 max-w-xs">
-                          <details>
-                            <summary className="cursor-pointer text-gray-700 list-none">
-                              {row.response.length > 120
-                                ? row.response.slice(0, 120) + "…"
-                                : row.response}
-                            </summary>
-                            <div className="mt-2 text-xs text-gray-600 prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {row.response}
-                              </ReactMarkdown>
-                            </div>
-                          </details>
+                        <td className="px-4 py-3 max-w-xs text-gray-700">
+                          {row.response.length > 120
+                            ? row.response.slice(0, 120) + "…"
+                            : row.response}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {row.rating === 1 ? (
@@ -1270,6 +1323,50 @@ export default function AdminPage() {
         )}
 
       </div>
+
+      {/* Log preview: the exchange as the user saw it */}
+      {previewRow && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+          onClick={() => setPreviewRow(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Conversation preview"
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-gray-50 shadow-xl px-4 pt-10 pb-6"
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewRow(null)}
+              aria-label="Close"
+              className="absolute top-3 right-3 p-1 rounded text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <X size={18} />
+            </button>
+            <div className="space-y-4">
+              <div className="flex flex-col items-end">
+                <div className="px-4 py-3 rounded-2xl max-w-[85%] text-sm leading-relaxed bg-green-700 text-white rounded-br-sm whitespace-pre-wrap">
+                  {previewRow.prompt}
+                </div>
+              </div>
+              <div className="flex flex-col items-start">
+                <div className="px-4 py-3 rounded-2xl max-w-[85%] text-sm leading-relaxed bg-white text-gray-900 border border-gray-200 shadow-xs rounded-bl-sm">
+                  <ChatMarkdown>{previewRow.response}</ChatMarkdown>
+                </div>
+                {previewRow.sources.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 max-w-[85%]">
+                    {previewRow.sources.map((src) => (
+                      <SourceChip key={src} label={src} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
