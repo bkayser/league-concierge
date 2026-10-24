@@ -410,7 +410,15 @@ export default function ChatPage() {
           </button>
         </form>
         <p className="max-w-2xl mx-auto mt-1.5 text-center text-[11px] text-gray-400">
-          Answers are based on OYSA official documents. Always verify with your league administrator.
+          Answers are based on OYSA official documents. Always verify with your league administrator.{" "}
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-gray-600"
+          >
+            Privacy Policy
+          </a>
         </p>
       </div>
     </div>

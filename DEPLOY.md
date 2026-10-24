@@ -163,7 +163,7 @@ After a successful chat (step 4b), re-run this check to confirm an interaction r
 ## Step 5 — Configure custom domain (first time only)
 
 1. In the Vercel project, go to **Settings → Domains**.
-2. Add your chat subdomain (for OYSA: `chat.oregonyouthsoccer.org`).
+2. Add your chat subdomain (for OYSA: `footy.oregonyouthsoccer.org`).
 3. Vercel displays a CNAME record. Add it at your DNS provider:
    - **Type:** `CNAME`
    - **Name:** `chat`
