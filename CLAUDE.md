@@ -23,7 +23,7 @@ Then:
 2. **Rewrite `lib/prompt.ts`** for the new organization. Keep the rules: answer only from context, never invent rules, fees, dates, or eligibility, cite the source document, and direct unanswerable questions to the organization.
 3. **Provision.** The user creates accounts and puts keys in `.env.local` themselves (DEPLOY.md steps 1–2). Then run `npm run create-index`, have the user apply the SQL in docs/DATABASE.md in the Neon SQL Editor (or apply it with `psql` if available), run `npm run migrate-admin-auth`, and run `npm run smoke`.
 4. **Verify locally** with the flow in DEPLOY.md step 6. Without Resend configured, the sign-in code appears in the dev server log.
-5. **Deploy.** The user imports the repo in Vercel and sets env vars; you can guide them or use the Vercel CLI/MCP if it's linked. Remind them to add a firewall rate limit on `/api/chat` (DEPLOY.md step 9) and that `app/privacy/page.tsx` is rewritten for the new organization.
+5. **Deploy.** The user imports the repo in Vercel and sets env vars; you can guide them or use the Vercel CLI/MCP if it's linked. Remind them to add a firewall rate limit on `/api/chat` (DEPLOY.md step 9) that `app/privacy/page.tsx` is rewritten for the new organization, and that `PRIVACY_CONTACT_EMAIL` is set in Vercel.
 
 Documents are added through the `/admin` UI, not by scripts.
 

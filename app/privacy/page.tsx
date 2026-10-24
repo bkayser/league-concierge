@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "Privacy Policy – OYSA Resource Page",
 };
 
-const CONTACT_EMAIL = "help@askfooty.com";
+const CONTACT_EMAIL = process.env.PRIVACY_CONTACT_EMAIL;
 const LAST_UPDATED = "October 24, 2026";
 
 export default function PrivacyPage() {
@@ -106,15 +106,19 @@ export default function PrivacyPage() {
       </p>
 
       <h2 className="text-base font-semibold mt-6 mb-1">Contact</h2>
-      <p>
-        Questions or requests:{" "}
-        <a
-          href={`mailto:${CONTACT_EMAIL}`}
-          className="text-green-700 underline hover:text-green-900"
-        >
-          {CONTACT_EMAIL}
-        </a>
-      </p>
+      {CONTACT_EMAIL ? (
+        <p>
+          Questions or requests:{" "}
+          <a
+            href={`mailto:${CONTACT_EMAIL}`}
+            className="text-green-700 underline hover:text-green-900"
+          >
+            {CONTACT_EMAIL}
+          </a>
+        </p>
+      ) : (
+        <p>Contact the organization that operates this site.</p>
+      )}
     </main>
   );
 }

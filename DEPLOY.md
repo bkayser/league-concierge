@@ -14,6 +14,7 @@ Do the steps in order. Steps 1–5 get the app running locally against real serv
 | `NEON_DATABASE_URL` | Step 4 |
 | `ADMIN_ALLOWLIST` | Comma-separated admin emails and/or domains, e.g. `pat@example.org,example.org`. See [docs/ADMIN_AUTH.md](docs/ADMIN_AUTH.md). |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Step 5. Optional for local development. |
+| `PRIVACY_CONTACT_EMAIL` | Contact address shown on the `/privacy` page. Not a secret. Without it the page shows a generic contact line. Read at build time, so redeploy after changing it. |
 
 ## 2. Install and configure
 
@@ -35,6 +36,7 @@ NEON_DATABASE_URL=postgresql://...
 ADMIN_ALLOWLIST=you@example.org
 RESEND_API_KEY=re_...
 EMAIL_FROM="Acme Concierge <concierge@mail.example.org>"
+PRIVACY_CONTACT_EMAIL=privacy@example.org
 ```
 
 ## 3. Create the Pinecone index

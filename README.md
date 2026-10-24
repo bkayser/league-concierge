@@ -64,7 +64,7 @@ Every chat turn is stored in your Neon database: the question, the answer, the d
 
 For administrators, the database stores email, name, phone number, sign-in times, and the audit trail of their source changes.
 
-The chat page links to a privacy policy at `/privacy` (`app/privacy/page.tsx`). It is written for OYSA; rewrite it for your organization, including the contact address and effective date.
+The chat page links to a privacy policy at `/privacy` (`app/privacy/page.tsx`). It is written for OYSA; rewrite it for your organization, including the effective date. The contact address comes from the `PRIVACY_CONTACT_EMAIL` env var.
 
 ## Security
 
@@ -120,7 +120,7 @@ Branding is plain strings and image files; there is no configuration layer.
 | `app/page.tsx` | Heading, mascot image and alt text, greeting, input placeholder, footer disclaimer |
 | `app/admin/page.tsx`, `app/admin/AdminLogin.tsx` | "OYSA Document Admin" heading; CSV download filenames in `page.tsx` |
 | `app/api/admin/log/route.ts`, `app/api/admin/audit/route.ts` | CSV download filenames |
-| `app/privacy/page.tsx` | Whole policy: organization, domain, contact email, date, data practices |
+| `app/privacy/page.tsx` | Whole policy: organization, domain, date, data practices (contact address is the `PRIVACY_CONTACT_EMAIL` env var) |
 | `app/layout.tsx` | Page title and description |
 | `lib/email.ts` | "Ask Footy" in the sign-in email subject and body |
 | `lib/extract.ts` | `OYSABot/1.0` user agent for URL ingest |
