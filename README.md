@@ -4,7 +4,7 @@ A Retrieval-Augmented Generation (RAG) chatbot that lets an organization's membe
 
 ## About this project
 
-League Concierge was built for the [Oregon Youth Soccer Association](https://oregonyouthsoccer.org) (OYSA), where it runs at `chat.oregonyouthsoccer.org` as "Footy," a Sasquatch mascot who answers questions from OYSA's rulebooks and policies. The code is released under the [MIT License](LICENSE). You are welcome to fork it and stand it up for your own organization, or just clone it to read and run locally. The OYSA deployment is the reference installation; this repository is not a generic product and makes no attempt to hide its origin. See [Rebranding a fork](#rebranding-a-fork) for what to change.
+League Concierge was built for the [Oregon Youth Soccer Association](https://oregonyouthsoccer.org) (OYSA), where it runs at `footy.oregonyouthsoccer.org` as "Footy," a Sasquatch mascot who answers questions from OYSA's rulebooks and policies. The code is released under the [MIT License](LICENSE). You are welcome to fork it and stand it up for your own organization, or just clone it to read and run locally. The OYSA deployment is the reference installation; this repository is not a generic product and makes no attempt to hide its origin. See [Rebranding a fork](#rebranding-a-fork) for what to change.
 
 ### Trademarks and mascot
 
@@ -59,7 +59,7 @@ your-org.example  (oregonyouthsoccer.org for OYSA)
 - **OpenAI for embeddings only.** Embedding vectors are stored permanently in Pinecone. OpenAI's `text-embedding-3-small` is the stable long-term choice. Do not swap embedding providers without re-ingesting the entire corpus.
 - **Anthropic Claude for generation only.** Claude is used exclusively for chat response synthesis. It is not used for embeddings. Claude was chosen over GPT-4o for its stronger tendency to stay within provided context and decline gracefully when the answer isn't in the documents.
 - **Embedding model is fixed at `text-embedding-3-small` / 1536 dimensions.** The Pinecone index dimension is set to 1536 to match. This cannot be changed without destroying and recreating the index and re-embedding all documents.
-- **CORS is avoided by using an iframe embed.** The chat UI is served from Vercel (for OYSA at `chat.oregonyouthsoccer.org` via CNAME). The parent site drops in a single `<iframe>` tag; allowed parent origins are set in `next.config.ts` via `frame-ancestors`. All fetch calls are same-origin within the iframe context.
+- **CORS is avoided by using an iframe embed.** The chat UI is served from Vercel (for OYSA at `footy.oregonyouthsoccer.org` via CNAME). The parent site drops in a single `<iframe>` tag; allowed parent origins are set in `next.config.ts` via `frame-ancestors`. All fetch calls are same-origin within the iframe context.
 - **Multi-turn conversation context** is maintained by sending full message history to Claude on each request. Only the latest user message is embedded for Pinecone retrieval.
 
 ## Project Structure
@@ -153,7 +153,7 @@ The admin interface must be usable by a **non-technical administrator**. Require
 
 ## Deployment
 
-- Production URL for OYSA: `chat.oregonyouthsoccer.org` (CNAME → Vercel deployment)
+- Production URL for OYSA: `footy.oregonyouthsoccer.org` (CNAME → Vercel deployment)
 - Every push to `main` triggers automatic Vercel redeploy
 - Environment variables managed in Vercel dashboard (never in source)
 
